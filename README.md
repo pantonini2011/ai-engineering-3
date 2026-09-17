@@ -98,9 +98,27 @@ ocurra, porque solo hay una función que construye embeddings en todo el proyect
 1. Carga todos los `.txt`/`.md` de `rag/docs/` como `Document` de LangChain, con
    `metadata={"source": <nombre de archivo>}` — esa metadata es la que después permite reportar
    `fuentes` reales sin depender de que el LLM las recuerde (ver más abajo).
-2. Los fragmenta con `RecursiveCharacterTextSplitter` (`chunk_size=1000`, `chunk_overlap=150`).
+2. Los fragmenta con un **splitter jerárquico** (`_fragmentar_documento()`): primero
+   `MarkdownHeaderTextSplitter` por encabezado (`#`/`##`/`###`), y recién para las secciones que
+   sigan superando `chunk_size=1000` caracteres, `RecursiveCharacterTextSplitter` como *fallback*
+   dentro de esa sección puntual (`chunk_overlap=150`).
 3. Persiste los fragmentos + sus embeddings en una colección de ChromaDB (`./vectorstore`,
    colección `manuales_tecnicos`), creada con `collection_metadata={"hnsw:space": "cosine"}`.
+
+**Por qué jerárquico y no un splitter plano**: el splitter plano original (una sola pasada de
+`RecursiveCharacterTextSplitter` sobre el documento completo) fue la causa raíz del "Hallazgo"
+documentado más abajo -- un corte por cantidad de caracteres, ciego al contenido, separó dentro de
+`runbook_incidentes.md` el síntoma/causa de un incidente de su propia sección de **Resolución**,
+en fragmentos distintos. `MarkdownHeaderTextSplitter` evita eso de raíz: mantiene cada `##`
+(ej. "Incidente 1" completo, con síntoma + causa + resolución) en un solo fragmento siempre que
+entre en `chunk_size`; solo recurre al fallback de caracteres para las 3 secciones del corpus que
+efectivamente lo superan (`Componentes principales`, `Proceso de despliegue a producción`,
+`Incidente 1`) -- y ahí corta *dentro* de esa sección puntual, nunca mezclando contenido de dos
+secciones o documentos distintos en el mismo fragmento (a diferencia del splitter plano).
+**Verificado, no solo en teoría**: la misma pregunta que antes daba "No lo sé" (ver "Hallazgo") --
+"¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?" --
+ahora recupera la sección completa de "Incidente 1" (con la Resolución adentro) y responde
+correctamente con los 3 pasos reales del runbook.
 
 **Métrica de distancia explícita, no la default implícita**: sin especificar `hnsw:space`, Chroma
 usa L2 al cuadrado por default, no coseno. Como los embeddings ya están normalizados
@@ -194,6 +212,11 @@ cadena_generacion = pipeline.with_retry(
   `1 - similitud_coseno`; `0.0` es lo más parecido). En el log se muestra invertido, como
   **similitud** (`1 - distancia`, en porcentaje) porque es más intuitivo de leer: `100%` es lo más
   parecido, no `0.0`. Ej.: `arquitectura_sistema.md (similitud=54.26%)`.
+- **El contenido completo de cada chunk recuperado se loguea a nivel `DEBUG`** (no `INFO`, para no
+  ensuciar el log por default): fue justamente inspeccionando esto durante el desarrollo que se
+  detectó el problema real que motivó el splitter jerárquico (ver "Módulo de ingesta" y
+  "Hallazgo" más abajo) -- se dejó como herramienta de diagnóstico permanente, no como algo
+  puntual. Para verlo, subí el nivel del logger a `DEBUG` en `rag/main.py` (o el que corresponda).
 
 `answer_question()` es el punto de entrada end-to-end:
 
@@ -275,14 +298,46 @@ que es exactamente lo que pide la consigna.
 pasar de `all-MiniLM-L6-v2` a `paraphrase-multilingual-MiniLM-L12-v2` (ver sección de diseño más
 arriba), el *ranking* de similitud cambia -- son modelos distintos, con espacios semánticos
 distintos -- y una pregunta que antes se respondía bien puede dejar de estarlo, y viceversa. Con el
-modelo multilingüe, la pregunta "¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?"
-recuperó un fragmento distinto de `monitoreo_alertas.md` (la sección de "Dashboards de referencia",
-que no menciona ningún umbral) en vez del fragmento con "Alerta al superar el 80% de uso sostenido
-durante más de 2 minutos" -- y el sistema, correctamente, volvió a responder "No lo sé" en vez de
-inventar un número. No es una regresión del cambio de modelo: es evidencia de que el *ranking* de
-similitud es sensible al modelo de embeddings usado, y de que el sistema se comporta de forma
-consistente (honesto ante la falta del dato puntual) sin importar cuál sea la causa concreta de que
-el fragmento correcto no entre en el `top_k`.
+modelo multilingüe (y todavía con el splitter plano), la pregunta "¿Qué umbral de uso de conexiones
+de PgBouncer dispara una alerta?" recuperó un fragmento distinto de `monitoreo_alertas.md` (la
+sección de "Dashboards de referencia", que no menciona ningún umbral) en vez del fragmento con
+"Alerta al superar el 80% de uso sostenido durante más de 2 minutos" -- y el sistema, correctamente,
+volvió a responder "No lo sé" en vez de inventar un número. No fue una regresión del cambio de
+modelo: fue evidencia de que el *ranking* de similitud es sensible al modelo de embeddings usado, y
+de que el sistema se comporta de forma consistente (honesto ante la falta del dato puntual) sin
+importar cuál sea la causa concreta de que el fragmento correcto no entre en el `top_k`.
+
+**Ambos casos, resueltos con el splitter jerárquico** (`MarkdownHeaderTextSplitter` +
+`RecursiveCharacterTextSplitter` como fallback, ver "Módulo de ingesta" más arriba): al mantener
+cada sección de encabezado completa en un solo fragmento en vez de cortar ciegamente por cantidad
+de caracteres, las dos preguntas que antes daban "No lo sé" ahora recuperan la sección correcta
+completa y responden con el dato puntual real:
+
+```json
+{
+  "pregunta": "¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?",
+  "respuesta": "Según el runbook de incidentes, los pasos para resolver un agotamiento del pool de conexiones a PostgreSQL son:\n\n1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100).\n\n2. Si hay una query \"colgada\" reteniendo conexiones, identificarla con la consulta `SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;` y, si corresponde, cancelarla con `pg_cancel_backend(pid)`.\n\n3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el sistema.",
+  "contexto_encontrado": true,
+  "fuentes": ["arquitectura_sistema.md", "monitoreo_alertas.md", "runbook_incidentes.md"]
+}
+```
+
+```json
+{
+  "pregunta": "¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?",
+  "respuesta": "El umbral de uso de conexiones de PgBouncer que dispara una alerta es el 80% de uso sostenido durante más de 2 minutos. Dado que el límite configurado es de 100 conexiones, esto significa que se genera una alerta cuando se superan 80 conexiones activas de forma sostenida durante ese período, ya que este es el precursor directo del agotamiento del pool de conexiones.",
+  "contexto_encontrado": true,
+  "fuentes": ["arquitectura_sistema.md", "monitoreo_alertas.md", "runbook_incidentes.md"]
+}
+```
+
+Importante: esto **no invalida** el trade-off explicado arriba -- con un documento lo bastante
+grande, o una pregunta cuyo dato puntual quede en una sub-sección `###` distinta de la que el
+`top_k` elegido trae, el mismo tipo de "No lo sé" correcto puede volver a aparecer. Lo que cambió
+es que ahora el corte de chunking respeta los límites semánticos del documento (nunca parte una
+sección a la mitad *por casualidad* de dónde cae el caracter 1000), así que cuando falla, falla por
+una razón real de cobertura de `top_k`/relevancia -- no por un accidente de dónde cortó un splitter
+ciego al contenido.
 
 ## Errores comunes evitados (según la consigna)
 

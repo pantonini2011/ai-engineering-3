@@ -201,6 +201,12 @@ async def answer_question(
             for d, distancia in docs_con_distancia
         ],
     )
+    for d, distancia in docs_con_distancia:
+        similitud_pct = (1 - distancia) * 100
+        logger.debug(
+            "CHUNK COMPLETO [%s, similitud=%.2f%%]:\n%s\n%s",
+            d.metadata.get("source"), similitud_pct, "-" * 60, d.page_content,
+        )
 
     contexto = _format_docs(docs)
     chain = build_chain(provider=provider, model=model)

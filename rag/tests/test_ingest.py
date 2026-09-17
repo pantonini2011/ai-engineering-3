@@ -1,4 +1,5 @@
 import pytest
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
 from rag import ingest as ingest_module
@@ -91,3 +92,48 @@ def test_ingesta_sin_documentos_lanza_error(tmp_path, persist_dir):
     vacio.mkdir()
     with pytest.raises(ValueError):
         ingest_module.ingest_documentos(directorio=str(vacio), persist_directory=persist_dir)
+
+
+class TestFragmentarDocumento:
+    def test_mantiene_junta_una_seccion_corta_con_su_encabezado(self):
+        texto = (
+            "# Título\n\n"
+            "## Incidente 1\n\n"
+            "**Síntoma**: algo falla.\n\n"
+            "**Resolución**: reiniciar el servicio.\n"
+        )
+        documento = Document(page_content=texto, metadata={"source": "runbook.md"})
+        fragmentos = ingest_module._fragmentar_documento(documento)
+
+        # Una sola sección (cabe entera dentro de CHUNK_SIZE): sintoma y
+        # resolución quedan en el MISMO fragmento, no separados.
+        assert len(fragmentos) == 1
+        assert "Síntoma" in fragmentos[0].page_content
+        assert "Resolución" in fragmentos[0].page_content
+        assert fragmentos[0].metadata["source"] == "runbook.md"
+        assert fragmentos[0].metadata["Header 2"] == "Incidente 1"
+
+    def test_aplica_fallback_dentro_de_una_seccion_larga_sin_mezclar_otra(self):
+        seccion_larga = "Contenido de relleno para forzar el fallback. " * 40  # > CHUNK_SIZE
+        texto = f"## Sección larga\n\n{seccion_larga}\n\n## Sección corta\n\nTexto breve.\n"
+        documento = Document(page_content=texto, metadata={"source": "doc.md"})
+        fragmentos = ingest_module._fragmentar_documento(documento)
+
+        de_la_larga = [f for f in fragmentos if f.metadata.get("Header 2") == "Sección larga"]
+        de_la_corta = [f for f in fragmentos if f.metadata.get("Header 2") == "Sección corta"]
+
+        # La sección larga se partió en más de un fragmento (fallback)...
+        assert len(de_la_larga) > 1
+        # ...pero ninguno de esos fragmentos contiene texto de la otra sección.
+        for f in de_la_larga:
+            assert "Texto breve" not in f.page_content
+        # La sección corta, en cambio, quedó en un solo fragmento.
+        assert len(de_la_corta) == 1
+
+    def test_texto_sin_encabezados_cae_directo_al_fallback(self):
+        texto = "Contenido plano sin ningún encabezado Markdown. " * 40
+        documento = Document(page_content=texto, metadata={"source": "plano.txt"})
+        fragmentos = ingest_module._fragmentar_documento(documento)
+
+        assert len(fragmentos) > 1
+        assert all(f.metadata["source"] == "plano.txt" for f in fragmentos)

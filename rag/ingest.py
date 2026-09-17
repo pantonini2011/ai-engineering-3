@@ -9,7 +9,7 @@ from langchain_chroma import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -26,6 +26,13 @@ CHUNK_OVERLAP = 150
 # literalmente `1 - similitud_coseno`, más interpretable que la alternativa
 # implícita (`2 - 2·similitud_coseno`).
 COLLECTION_METADATA = {"hnsw:space": "cosine"}
+# Splitter jerárquico: primero por encabezado Markdown (mantiene una sección
+# semántica completa -- ej. un incidente entero, con síntoma/causa/resolución
+# -- en un mismo fragmento), y recién para las secciones que sigan siendo
+# demasiado largas, RecursiveCharacterTextSplitter como fallback dentro de
+# esa sección puntual (nunca mezcla contenido de dos secciones/documentos
+# distintos en el mismo fragmento, a diferencia del splitter plano anterior).
+HEADERS_A_DIVIDIR = [("#", "Header 1"), ("##", "Header 2"), ("###", "Header 3")]
 
 
 @lru_cache(maxsize=1)
@@ -77,6 +84,43 @@ def _cargar_documentos(directorio: Path) -> list[Document]:
     return documentos
 
 
+def _fragmentar_documento(documento: Document) -> list[Document]:
+    """Fragmenta un `Document` en dos pasos:
+
+    1. `MarkdownHeaderTextSplitter`: divide por encabezado (`#`/`##`/`###`),
+       manteniendo cada sección semántica completa en un solo fragmento --
+       ej. "## Incidente 1" queda junto con su síntoma, causa raíz Y
+       resolución, en vez de que un corte ciego por cantidad de caracteres
+       los separe en fragmentos distintos (ver "Hallazgo" en el README: ese
+       fue exactamente el problema real observado con el splitter plano).
+       `strip_headers=False` deja el título de la sección adentro del
+       `page_content` (útil como contexto para el LLM, no solo en metadata).
+    2. `RecursiveCharacterTextSplitter` como *fallback*, solo para las
+       secciones que sigan superando `CHUNK_SIZE` después del paso 1 --
+       nunca mezcla contenido de dos secciones (o documentos) distintos en
+       el mismo fragmento, porque corta *dentro* de una sección ya acotada,
+       no sobre el texto completo del documento.
+
+    Si el archivo no tiene encabezados Markdown (ej. un `.txt` plano),
+    `MarkdownHeaderTextSplitter` devuelve una única "sección" con todo el
+    texto, y el comportamiento cae directamente al fallback -- mismo
+    resultado que el splitter plano anterior para ese caso."""
+    header_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=HEADERS_A_DIVIDIR, strip_headers=False)
+    secciones = header_splitter.split_text(documento.page_content)
+
+    fallback_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+
+    fragmentos = []
+    for seccion in secciones:
+        metadata = {**documento.metadata, **seccion.metadata}
+        if len(seccion.page_content) <= CHUNK_SIZE:
+            fragmentos.append(Document(page_content=seccion.page_content, metadata=metadata))
+        else:
+            for texto in fallback_splitter.split_text(seccion.page_content):
+                fragmentos.append(Document(page_content=texto, metadata=metadata))
+    return fragmentos
+
+
 def _coleccion_ya_poblada(persist_directory: str, collection_name: str, embeddings: Embeddings) -> bool:
     """Chequea si la colección ya tiene documentos indexados, para no volver a
     fragmentar y re-embeddear todo en cada corrida (la consigna lo marca
@@ -99,10 +143,12 @@ def ingest_documentos(
     force_reindex: bool = False,
 ) -> Chroma:
     """Módulo de ingesta: fragmenta los documentos de `directorio` (default:
-    `rag/docs`) con `RecursiveCharacterTextSplitter` y los persiste en una
-    colección de ChromaDB en `persist_directory`. Si la colección ya existe y
-    tiene documentos, no vuelve a indexar (salvo `force_reindex=True`) --
-    devuelve directamente el `Chroma` apuntando a la colección persistida."""
+    `rag/docs`) con un splitter jerárquico (encabezados Markdown, con
+    `RecursiveCharacterTextSplitter` como fallback dentro de secciones largas
+    -- ver `_fragmentar_documento`) y los persiste en una colección de
+    ChromaDB en `persist_directory`. Si la colección ya existe y tiene
+    documentos, no vuelve a indexar (salvo `force_reindex=True`) -- devuelve
+    directamente el `Chroma` apuntando a la colección persistida."""
     directorio_path = Path(directorio) if directorio else DOCS_DIR
     embeddings = _build_embeddings()
 
@@ -119,8 +165,9 @@ def ingest_documentos(
     if not documentos:
         raise ValueError(f"No se encontraron archivos .txt/.md en '{directorio_path}'.")
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    fragmentos = splitter.split_documents(documentos)
+    fragmentos = []
+    for documento in documentos:
+        fragmentos.extend(_fragmentar_documento(documento))
     logger.info(
         "Indexando %d fragmentos de %d documento(s) en la colección '%s' (%s)...",
         len(fragmentos),
