@@ -163,6 +163,12 @@ cadena_generacion = pipeline.with_retry(
   fuerza `respuesta` al mensaje canónico exacto cuando `contexto_encontrado=False`, sin importar
   qué texto haya generado el modelo — la consistencia de esa respuesta no depende de que el LLM
   cumpla la instrucción del prompt.
+- **El paso de *retrieval* también está protegido, no solo la generación**: `answer_question()`
+  envuelve `ingest_documentos()` + `retriever.ainvoke()` en su propio `try/except` (loguea con
+  contexto propio -- "Fallo recuperando contexto..." -- y re-lanza, mismo criterio de "logueá y
+  propagá" que ya usaba el paso de generación). Antes de este cambio, una falla de ChromaDB o del
+  modelo de embeddings durante el retrieval salía como un traceback sin explicación, distinto del
+  path de error ya cubierto de la generación.
 
 `answer_question()` es el punto de entrada end-to-end:
 
@@ -253,7 +259,7 @@ que es exactamente lo que pide la consigna.
 pytest rag/tests/ -v
 ```
 
-33 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
+34 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
 
 - `test_schemas.py`: validación de `RespuestaLLM` (respuesta no vacía, limpieza de espacios,
   campos requeridos, tipos, normalización de `respuesta` a `NO_CONTEXTO_MENSAJE` cuando
@@ -276,7 +282,9 @@ pytest rag/tests/ -v
   `retry_if_exception_type` lo acota a `RespuestaIncompletaError`. `answer_question()` se prueba
   con un `FakeVectorstore`/`FakeRetriever` y una `FakeChain`, verificando que las `fuentes` se
   calculan a partir de los documentos recuperados (deduplicadas y ordenadas) y quedan vacías
-  cuando `contexto_encontrado=False`.
+  cuando `contexto_encontrado=False`. También cubre que una falla durante el retrieval (ej.
+  ChromaDB caído) se loguea con el mensaje "Fallo recuperando contexto..." y se propaga, en vez
+  de tragarse en silencio.
 
 La fixture `fast_retries` (en `rag/tests/conftest.py`) parchea `asyncio.sleep` para neutralizar
 el backoff real de `.with_retry()` durante los tests, mismo criterio que el Módulo 2.

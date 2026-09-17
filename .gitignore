@@ -6,7 +6,13 @@ __pycache__/
 .pytest_cache/
 vectorstore/
 rag/rag.log
+my_local_db/
 
 # Archivos sueltos que no son parte de esta entrega
 ejercio3.py
+ejercicio4.py
+ejercicio4.md
 log_salida.md
+correccion_ej3.md
+correccion_ej4.md
+ultima_correcci*_ej4.md

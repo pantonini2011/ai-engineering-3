@@ -36,6 +36,16 @@ class FakeChain:
         return self._resultado
 
 
+class FakeRetrieverRoto:
+    async def ainvoke(self, query):
+        raise ConnectionError("ChromaDB no disponible")
+
+
+class FakeVectorstoreRoto:
+    def as_retriever(self, search_kwargs=None):
+        return FakeRetrieverRoto()
+
+
 class TestFormatDocs:
     def test_formatea_documentos_con_fuente(self):
         docs = [Document(page_content="Hola mundo", metadata={"source": "a.md"})]
@@ -178,3 +188,12 @@ class TestAnswerQuestion:
         )
         resultado = await chain_module.answer_question("pregunta sin resultados", vectorstore=vectorstore)
         assert resultado.fuentes == []
+
+    async def test_propaga_error_de_retrieval_con_log(self, caplog):
+        """Si ChromaDB/el modelo de embeddings falla durante el retrieval (no
+        durante la generación), el error se loguea con contexto propio -- no
+        debe quedar como un traceback sin explicación -- y se propaga (no se
+        traga en silencio)."""
+        with pytest.raises(ConnectionError):
+            await chain_module.answer_question("algo", vectorstore=FakeVectorstoreRoto())
+        assert "Fallo recuperando contexto" in caplog.text

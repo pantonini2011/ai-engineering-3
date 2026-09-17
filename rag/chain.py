@@ -137,9 +137,7 @@ def build_chain(provider: str = "anthropic", model: Optional[str] = None) -> Run
     """Cadena LCEL de generación grounded: recibe `{"contexto": ..., "pregunta":
     ...}` (el contexto ya viene de los documentos recuperados por el retriever,
     ver `answer_question`) y produce un `RespuestaLLM` validado.
-
         PROMPT | llm | RunnableLambda(_validar_salida)
-
     Envuelta en `.with_retry()` (mismo criterio que el Módulo 2): ante
     `RespuestaIncompletaError` (respuesta truncada, o mal formada/incompleta
     para `PydanticOutputParser`), se reintenta la cadena completa -- un nuevo
@@ -179,12 +177,16 @@ async def answer_question(
        encontró la respuesta en el contexto, aunque el retriever haya traído
        fragmentos (poco relevantes) igual.
     """
-    vectorstore = vectorstore or ingest_documentos()
-    retriever = vectorstore.as_retriever(search_kwargs={"k": top_k})
-
     logger.info("Recuperando contexto para la pregunta: %r", pregunta)
     inicio = time.perf_counter()
-    docs = await retriever.ainvoke(pregunta)
+    try:
+        vectorstore = vectorstore or ingest_documentos()
+        retriever = vectorstore.as_retriever(search_kwargs={"k": top_k})
+        docs = await retriever.ainvoke(pregunta)
+    except Exception:
+        duracion = time.perf_counter() - inicio
+        logger.exception("Fallo recuperando contexto tras %.2fs (ChromaDB o modelo de embeddings).", duracion)
+        raise
     logger.info("Recuperados %d fragmento(s): %s", len(docs), [d.metadata.get("source") for d in docs])
 
     contexto = _format_docs(docs)
