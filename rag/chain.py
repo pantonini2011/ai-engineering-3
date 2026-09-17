@@ -182,20 +182,24 @@ async def answer_question(
     try:
         vectorstore = vectorstore or ingest_documentos()
         # similarity_search_with_score() en vez de as_retriever().ainvoke():
-        # el retriever descarta el score de similitud, y acá lo necesitamos
-        # para loguearlo (con la colección configurada a "cosine", ver
-        # rag/ingest.py, el score es literalmente 1 - similitud_coseno --
-        # más bajo es más similar).
-        docs_con_score = await vectorstore.asimilarity_search_with_score(pregunta, k=top_k)
+        # el retriever descarta el score, y acá lo necesitamos para loguearlo.
+        # Chroma devuelve DISTANCIA (0.0 = más parecido; con la colección
+        # configurada a "cosine", ver rag/ingest.py, es 1 - similitud_coseno).
+        # Se muestra como SIMILITUD (1 - distancia; 1.0/100% = más parecido),
+        # más intuitivo para leer en el log.
+        docs_con_distancia = await vectorstore.asimilarity_search_with_score(pregunta, k=top_k)
     except Exception:
         duracion = time.perf_counter() - inicio
         logger.exception("Fallo recuperando contexto tras %.2fs (ChromaDB o modelo de embeddings).", duracion)
         raise
-    docs = [doc for doc, _ in docs_con_score]
+    docs = [doc for doc, _ in docs_con_distancia]
     logger.info(
         "Recuperados %d fragmento(s): %s",
         len(docs),
-        [f"{d.metadata.get('source')} (score={score:.4f})" for d, score in docs_con_score],
+        [
+            f"{d.metadata.get('source')} (similitud={1 - distancia:.2%})"
+            for d, distancia in docs_con_distancia
+        ],
     )
 
     contexto = _format_docs(docs)

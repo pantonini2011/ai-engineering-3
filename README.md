@@ -189,10 +189,11 @@ cadena_generacion = pipeline.with_retry(
   path de error ya cubierto de la generación.
 - **El score de similitud queda visible en el log**: se usa
   `vectorstore.asimilarity_search_with_score()` en vez de `as_retriever().ainvoke()` -- este último
-  descarta el score, el primero lo devuelve junto con cada `Document`. Con la colección configurada
-  a `hnsw:space="cosine"` (ver sección de ingesta), el score es literalmente `1 - similitud_coseno`
-  -- **más bajo es más similar** -- y se loguea junto a la fuente de cada fragmento recuperado, ej.
-  `arquitectura_sistema.md (score=0.4574)`.
+  descarta el score, el primero lo devuelve junto con cada `Document`. Chroma devuelve una
+  **distancia** (con la colección configurada a `hnsw:space="cosine"`, ver sección de ingesta, es
+  `1 - similitud_coseno`; `0.0` es lo más parecido). En el log se muestra invertido, como
+  **similitud** (`1 - distancia`, en porcentaje) porque es más intuitivo de leer: `100%` es lo más
+  parecido, no `0.0`. Ej.: `arquitectura_sistema.md (similitud=54.26%)`.
 
 `answer_question()` es el punto de entrada end-to-end:
 
