@@ -6,3 +6,7 @@ __pycache__/
 .pytest_cache/
 vectorstore/
 rag/rag.log
+
+# Archivos sueltos que no son parte de esta entrega
+ejercio3.py
+log_salida.md
