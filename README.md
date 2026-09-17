@@ -174,6 +174,18 @@ cadena_generacion = pipeline.with_retry(
   incidente pero no sus pasos de resolución no alcanza para responder "cómo se resuelve"). También
   instruye a no mezclar datos de fragmentos de documentos/incidentes distintos como si fueran una
   sola respuesta.
+- **Instrucción explícita de fidelidad técnica**: una vez resuelto el chunking (splitter
+  jerárquico, ver más abajo), apareció un problema distinto -- el modelo **sí** encontraba el
+  contexto correcto, pero lo parafraseaba perdiendo datos puntuales al redactar la respuesta. Con
+  la pregunta de resolución del pool de PostgreSQL, "escalar horizontalmente el número de
+  **réplicas de PgBouncer** o subir el límite de conexiones a **150**" se resumía a "escalar el
+  sistema" -- exactamente el tipo de dato operativo que alguien de guardia necesita, perdido en la
+  paráfrasis. El prompt original no decía nada sobre *cómo* redactar cuando el contexto sí alcanza,
+  solo sobre qué hacer cuando no alcanza. Se agregó una instrucción de "fidelidad técnica": pasos,
+  comandos, valores numéricos o nombres de parámetros puntuales se reproducen tal cual aparecen en
+  el CONTEXTO, no se resumen ni parafrasean aunque conserven el sentido general -- con un ejemplo
+  concreto (el mismo caso real) anclando el criterio. Verificado: la misma pregunta ahora conserva
+  "réplicas de PgBouncer" y "150" textualmente en la respuesta.
 - **`_validar_salida`** (mismo criterio que `_validar_salida` del Módulo 2) chequea, en este
   orden:
   1. El `finish_reason` (OpenAI/Ollama) / `stop_reason` (Anthropic) del mensaje crudo del LLM. Si
@@ -316,11 +328,17 @@ completa y responden con el dato puntual real:
 ```json
 {
   "pregunta": "¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?",
-  "respuesta": "Según el runbook de incidentes, los pasos para resolver un agotamiento del pool de conexiones a PostgreSQL son:\n\n1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100).\n\n2. Si hay una query \"colgada\" reteniendo conexiones, identificarla con la consulta `SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;` y, si corresponde, cancelarla con `pg_cancel_backend(pid)`.\n\n3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el sistema.",
+  "respuesta": "Según el runbook de incidentes, los pasos para resolver un agotamiento del pool de conexiones a PostgreSQL son:\n\n1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100).\n\n2. Si hay una query \"colgada\" reteniendo conexiones, identificarla con:\n   ```\n   SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;\n   ```\n   y, si corresponde, cancelarla con `pg_cancel_backend(pid)`.\n\n3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el número de réplicas de PgBouncer o subir el límite de conexiones a 150.",
   "contexto_encontrado": true,
   "fuentes": ["arquitectura_sistema.md", "monitoreo_alertas.md", "runbook_incidentes.md"]
 }
 ```
+
+*Nota sobre esta evidencia*: en la primera corrida tras el splitter jerárquico, el paso 3 de esta
+respuesta decía "escalar horizontalmente el sistema" -- el modelo sí había encontrado el contexto
+correcto, pero al redactar perdió los datos puntuales ("réplicas de PgBouncer", "150") en una
+paráfrasis genérica. Ese fue el hallazgo que motivó agregar la instrucción de "fidelidad técnica"
+al prompt (ver sección anterior); el JSON de arriba ya refleja el comportamiento corregido.
 
 ```json
 {
