@@ -47,7 +47,7 @@ cp .env.example .env           # y completá tus credenciales
 python -m rag.main
 ```
 
-Esto ingesta `rag/docs/` (si `vectorstore/` no existe todavía) y corre 5 preguntas: 4 con
+Esto ingesta `rag/docs/` (si `vectorstore/` no existe aún) y corre 5 preguntas: 4 con
 respuesta en el contexto y 1 deliberadamente fuera de él, para verificar el comportamiento
 "No lo sé".
 
