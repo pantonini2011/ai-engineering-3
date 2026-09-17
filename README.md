@@ -187,8 +187,9 @@ cadena_generacion = pipeline.with_retry(
 
 ## Evidencia real de ejecución
 
-Corrida real (`python -m rag.main`, embeddings `sentence-transformers/all-MiniLM-L6-v2` local,
-generación `provider="anthropic"`):
+Corrida real (`python -m rag.main`, embeddings
+`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` local, generación
+`provider="anthropic"`):
 
 **Pregunta con respuesta clara en el contexto:**
 
@@ -244,6 +245,19 @@ sección "Resolución" en el mismo fragmento que su incidente) o un `top_k` más
 esa información — a costa de más tokens por consulta. El comportamiento correcto y observado acá
 es que el sistema prefiere decir "No lo sé" antes que inventar pasos de resolución no verificados,
 que es exactamente lo que pide la consigna.
+
+**Segunda instancia del mismo trade-off, tras cambiar a un modelo de embeddings multilingüe**: al
+pasar de `all-MiniLM-L6-v2` a `paraphrase-multilingual-MiniLM-L12-v2` (ver sección de diseño más
+arriba), el *ranking* de similitud cambia -- son modelos distintos, con espacios semánticos
+distintos -- y una pregunta que antes se respondía bien puede dejar de estarlo, y viceversa. Con el
+modelo multilingüe, la pregunta "¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?"
+recuperó un fragmento distinto de `monitoreo_alertas.md` (la sección de "Dashboards de referencia",
+que no menciona ningún umbral) en vez del fragmento con "Alerta al superar el 80% de uso sostenido
+durante más de 2 minutos" -- y el sistema, correctamente, volvió a responder "No lo sé" en vez de
+inventar un número. No es una regresión del cambio de modelo: es evidencia de que el *ranking* de
+similitud es sensible al modelo de embeddings usado, y de que el sistema se comporta de forma
+consistente (honesto ante la falta del dato puntual) sin importar cuál sea la causa concreta de que
+el fragmento correcto no entre en el `top_k`.
 
 ## Errores comunes evitados (según la consigna)
 

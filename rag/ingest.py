@@ -29,10 +29,18 @@ def _build_embeddings() -> Embeddings:
     embeddings y consultar con otro distinto, lo que vuelve la distancia vectorial
     inútil sin que nada lo avise en tiempo de ejecución.
 
-    Se usa `HuggingFaceEmbeddings` con `sentence-transformers/all-MiniLM-L6-v2`:
-    corre 100% local (el modelo se descarga una vez desde el Hub y queda
-    cacheado en disco, sin API key ni servidor externo corriendo) -- coherente
-    con el título de la consigna ("sistema de recuperación semántica LOCAL").
+    Se usa `HuggingFaceEmbeddings` con
+    `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`: corre 100%
+    local (el modelo se descarga una vez desde el Hub y queda cacheado en
+    disco, sin API key ni servidor externo corriendo) -- coherente con el
+    título de la consigna ("sistema de recuperación semántica LOCAL"). Se
+    eligió la variante *multilingüe* en vez de `all-MiniLM-L6-v2` (entrenado
+    casi exclusivamente en inglés) porque todo el "cerebro" documental
+    (`rag/docs/`) y las preguntas de prueba están en español -- un modelo
+    solo-inglés degrada la similitud coseno ante sinonimia o lenguaje
+    coloquial en español. `normalize_embeddings=True` normaliza los vectores
+    a norma unitaria antes de guardarlos, que es lo que este modelo espera
+    para que la distancia coseno se calcule correctamente.
 
     `@lru_cache`: a diferencia de un proveedor hosteado (una llamada HTTP
     liviana), `HuggingFaceEmbeddings` carga el modelo de `sentence-transformers`
@@ -40,7 +48,12 @@ def _build_embeddings() -> Embeddings:
     `answer_question()` -- que llama a `ingest_documentos()`, y esta a
     `_build_embeddings()` -- volvía a cargar el modelo desde cero. Cacheado,
     se carga una única vez por proceso."""
-    return HuggingFaceEmbeddings(model_name=os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"))
+    model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+    return HuggingFaceEmbeddings(
+        model_name=model_name,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
 
 
 def _cargar_documentos(directorio: Path) -> list[Document]:
