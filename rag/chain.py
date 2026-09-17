@@ -181,13 +181,22 @@ async def answer_question(
     inicio = time.perf_counter()
     try:
         vectorstore = vectorstore or ingest_documentos()
-        retriever = vectorstore.as_retriever(search_kwargs={"k": top_k})
-        docs = await retriever.ainvoke(pregunta)
+        # similarity_search_with_score() en vez de as_retriever().ainvoke():
+        # el retriever descarta el score de similitud, y acá lo necesitamos
+        # para loguearlo (con la colección configurada a "cosine", ver
+        # rag/ingest.py, el score es literalmente 1 - similitud_coseno --
+        # más bajo es más similar).
+        docs_con_score = await vectorstore.asimilarity_search_with_score(pregunta, k=top_k)
     except Exception:
         duracion = time.perf_counter() - inicio
         logger.exception("Fallo recuperando contexto tras %.2fs (ChromaDB o modelo de embeddings).", duracion)
         raise
-    logger.info("Recuperados %d fragmento(s): %s", len(docs), [d.metadata.get("source") for d in docs])
+    docs = [doc for doc, _ in docs_con_score]
+    logger.info(
+        "Recuperados %d fragmento(s): %s",
+        len(docs),
+        [f"{d.metadata.get('source')} (score={score:.4f})" for d, score in docs_con_score],
+    )
 
     contexto = _format_docs(docs)
     chain = build_chain(provider=provider, model=model)

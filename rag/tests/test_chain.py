@@ -12,20 +12,14 @@ def _fake_llm(responses):
     return FakeListChatModel(responses=responses)
 
 
-class FakeRetriever:
-    def __init__(self, docs):
-        self._docs = docs
-
-    async def ainvoke(self, query):
-        return self._docs
-
-
 class FakeVectorstore:
     def __init__(self, docs):
-        self._docs = docs
+        # score de similitud ficticio (1 - similitud_coseno), no relevante
+        # para lo que prueban estos tests -- solo importan los documentos.
+        self._docs_con_score = [(doc, 0.1 * i) for i, doc in enumerate(docs)]
 
-    def as_retriever(self, search_kwargs=None):
-        return FakeRetriever(self._docs)
+    async def asimilarity_search_with_score(self, query, k=None):
+        return self._docs_con_score
 
 
 class FakeChain:
@@ -36,14 +30,9 @@ class FakeChain:
         return self._resultado
 
 
-class FakeRetrieverRoto:
-    async def ainvoke(self, query):
-        raise ConnectionError("ChromaDB no disponible")
-
-
 class FakeVectorstoreRoto:
-    def as_retriever(self, search_kwargs=None):
-        return FakeRetrieverRoto()
+    async def asimilarity_search_with_score(self, query, k=None):
+        raise ConnectionError("ChromaDB no disponible")
 
 
 class TestFormatDocs:
