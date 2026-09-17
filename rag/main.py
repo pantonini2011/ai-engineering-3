@@ -25,16 +25,19 @@ PREGUNTA_SIN_CONTEXTO = "¿Cuál es la política de vacaciones del equipo de gua
 
 async def main(provider: str = "anthropic") -> None:
     print("=== Módulo de ingesta ===")
-    ingest_documentos()
+    # Se construye una única vez y se reutiliza en cada pregunta (pasándola
+    # explícitamente a answer_question) -- sin esto, cada pregunta reabriría
+    # su propia conexión a la colección persistida en SQLite innecesariamente.
+    vectorstore = ingest_documentos()
 
     print("\n=== Preguntas con respuesta en el contexto ===")
     for pregunta in PREGUNTAS_CON_CONTEXTO:
-        resultado = await answer_question(pregunta, provider=provider)
+        resultado = await answer_question(pregunta, provider=provider, vectorstore=vectorstore)
         print(f"\nPregunta: {pregunta}")
         print(resultado.model_dump_json(indent=2))
 
     print("\n=== Pregunta fuera del contexto disponible (debe responder 'No lo sé') ===")
-    resultado = await answer_question(PREGUNTA_SIN_CONTEXTO, provider=provider)
+    resultado = await answer_question(PREGUNTA_SIN_CONTEXTO, provider=provider, vectorstore=vectorstore)
     print(f"\nPregunta: {PREGUNTA_SIN_CONTEXTO}")
     print(resultado.model_dump_json(indent=2))
 

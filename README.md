@@ -100,7 +100,17 @@ ocurra, porque solo hay una función que construye embeddings en todo el proyect
    `fuentes` reales sin depender de que el LLM las recuerde (ver más abajo).
 2. Los fragmenta con `RecursiveCharacterTextSplitter` (`chunk_size=1000`, `chunk_overlap=150`).
 3. Persiste los fragmentos + sus embeddings en una colección de ChromaDB (`./vectorstore`,
-   colección `manuales_tecnicos`).
+   colección `manuales_tecnicos`), creada con `collection_metadata={"hnsw:space": "cosine"}`.
+
+**Métrica de distancia explícita, no la default implícita**: sin especificar `hnsw:space`, Chroma
+usa L2 al cuadrado por default, no coseno. Como los embeddings ya están normalizados
+(`normalize_embeddings=True` en `_build_embeddings()`), el *orden* de similitud es idéntico con
+cualquiera de las dos métricas (L2² sobre vectores unitarios es `2 - 2·cos_sim`, una
+transformación monótona de la similitud coseno) — pero fijar `"cosine"` explícitamente hace que el
+score que devuelva Chroma sea literalmente `1 - similitud_coseno`, más interpretable si en algún
+momento se loguea o expone. Verificado a mano: con `hnsw:space` sin especificar, el score de
+Chroma coincidía con `2 - 2·cos_sim` calculado por separado; tras el cambio, coincide exacto con
+`1 - cos_sim`.
 
 **Persistencia real, no solo teórica**: antes de indexar, `_coleccion_ya_poblada()` abre la
 colección persistida y chequea `._collection.count() > 0`. Si ya tiene documentos, `ingest_documentos()`
@@ -110,6 +120,14 @@ devuelve directamente el `Chroma` existente sin volver a fragmentar ni re-embedd
 ```
 INFO rag.ingest: Colección 'manuales_tecnicos' ya poblada en D:\...\vectorstore: se omite la re-indexación.
 ```
+
+**Una sola conexión a Chroma por corrida, no una por pregunta**: `rag/main.py` llama a
+`ingest_documentos()` una única vez al principio y pasa el `Chroma` devuelto explícitamente a cada
+`answer_question(..., vectorstore=vectorstore)`. Sin esto, cada pregunta reabriría su propia
+conexión al `chroma.sqlite3` persistido (`answer_question` hace `vectorstore or
+ingest_documentos()` -- si no se pasa `vectorstore`, reconecta desde cero) -- innecesario cuando ya
+tenés la instancia a mano, y un riesgo real de contención si en el futuro esto corriera con
+requests concurrentes sobre el mismo archivo SQLite.
 
 ## Cadena LCEL de generación grounded (`chain.py`)
 

@@ -19,6 +19,13 @@ PERSIST_DIRECTORY = str(Path(__file__).parent.parent / "vectorstore")
 COLLECTION_NAME = "manuales_tecnicos"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
+# Chroma usa L2 al cuadrado por default (no coseno) si no se especifica. Como
+# los embeddings ya están normalizados (`normalize_embeddings=True`), el orden
+# de similitud da igual con cualquiera de las dos métricas -- pero fijar
+# "cosine" explícitamente hace que el score que devuelve Chroma sea
+# literalmente `1 - similitud_coseno`, más interpretable que la alternativa
+# implícita (`2 - 2·similitud_coseno`).
+COLLECTION_METADATA = {"hnsw:space": "cosine"}
 
 
 @lru_cache(maxsize=1)
@@ -80,6 +87,7 @@ def _coleccion_ya_poblada(persist_directory: str, collection_name: str, embeddin
         persist_directory=persist_directory,
         collection_name=collection_name,
         embedding_function=embeddings,
+        collection_metadata=COLLECTION_METADATA,
     )
     return vectorstore._collection.count() > 0
 
@@ -104,6 +112,7 @@ def ingest_documentos(
             persist_directory=persist_directory,
             collection_name=collection_name,
             embedding_function=embeddings,
+            collection_metadata=COLLECTION_METADATA,
         )
 
     documentos = _cargar_documentos(directorio_path)
@@ -125,6 +134,7 @@ def ingest_documentos(
         embedding=embeddings,
         persist_directory=persist_directory,
         collection_name=collection_name,
+        collection_metadata=COLLECTION_METADATA,
     )
     logger.info("Indexación completa: %d fragmentos persistidos.", len(fragmentos))
     return vectorstore
