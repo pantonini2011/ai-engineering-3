@@ -9,6 +9,22 @@ pedidos (FastAPI + PostgreSQL + Redis + Celery) — el mismo sistema descripto e
 [Módulo 2](https://github.com/pantonini2011/ai-engineering-2), para mantener continuidad entre
 entregas: arquitectura, runbook de incidentes, normativa de despliegue y monitoreo/alertas.
 
+## Índice
+
+- [Estructura](#estructura)
+- [Requisitos](#requisitos)
+- [Instalación](#instalación)
+- [Cómo correrlo](#cómo-correrlo)
+- [Diseño](#diseño)
+  - [Qué es "local" acá, y qué no](#qué-es-local-acá-y-qué-no)
+  - [Embeddings locales (Hugging Face)](#embeddings-locales-hugging-face)
+- [Arquitectura interna](#arquitectura-interna)
+  - [Módulo de ingesta (`ingest.py`)](#módulo-de-ingesta-ingestpy)
+  - [Cadena LCEL de generación grounded (`chain.py`)](#cadena-lcel-de-generación-grounded-chainpy)
+- [Evidencia real de ejecución](#evidencia-real-de-ejecución)
+- [Errores comunes evitados (según la consigna)](#errores-comunes-evitados-según-la-consigna)
+- [Tests](#tests)
+
 ## Estructura
 
 ```
@@ -27,7 +43,7 @@ vectorstore/                  # Colección persistida de ChromaDB (generada al c
 - Python 3.12 (mismo criterio que los Módulos 1 y 2). En Windows, con el `py launcher`:
   `py -3.12 -m venv .venv`.
 - Una API key de Anthropic (proveedor de generación por default) y/o de OpenAI.
-- Conexión a internet la primera vez que se corre: `sentence-transformers/all-MiniLM-L6-v2`
+- Conexión a internet la primera vez que se corre: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
   (modelo de embeddings) se descarga una vez desde Hugging Face Hub y queda cacheado en disco;
   no hace falta ninguna API key para usarlo. [Ollama](https://ollama.com) es opcional, solo si se
   usa `provider="ollama"` para la generación.
@@ -51,7 +67,9 @@ Esto ingesta `rag/docs/` (si `vectorstore/` no existe aún) y corre 5 preguntas:
 respuesta en el contexto y 1 deliberadamente fuera de él, para verificar el comportamiento
 "No lo sé".
 
-## Qué es "local" acá, y qué no
+## Diseño
+
+### Qué es "local" acá, y qué no
 
 "Local" en el título de la consigna describe a la **base vectorial**: ChromaDB persiste su
 colección en disco (`./vectorstore`), no en un servicio hosteado. No implica que el LLM de
@@ -63,13 +81,19 @@ redacta la respuesta final.
 Los **embeddings** sí corren local, pero eso es una decisión de diseño aparte (ver abajo), no un
 requisito de la consigna.
 
-## Diseño: embeddings locales (Hugging Face)
+### Embeddings locales (Hugging Face)
 
 `rag/ingest.py::_build_embeddings()` usa **`HuggingFaceEmbeddings`** con el modelo
-`sentence-transformers/all-MiniLM-L6-v2`: corre 100% local (se descarga una vez desde el Hub y
-queda cacheado en disco, sin API key ni servidor externo corriendo). Ninguno de los proveedores de
-generación configurados (Anthropic, OpenAI) ofrece un modelo de embeddings propio sin sumar una
-API extra (ej. Voyage AI) sólo para eso — `sentence-transformers` evita esa dependencia adicional.
+`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`: corre 100% local (se descarga una
+vez desde el Hub y queda cacheado en disco, sin API key ni servidor externo corriendo). Ninguno
+de los proveedores de generación configurados (Anthropic, OpenAI) ofrece un modelo de embeddings
+propio sin sumar una API extra (ej. Voyage AI) sólo para eso — `sentence-transformers` evita esa
+dependencia adicional.
+
+Se eligió la variante **multilingüe** en vez de `all-MiniLM-L6-v2` (entrenado casi
+exclusivamente en inglés) porque todo el corpus documental (`rag/docs/`) y las preguntas de
+prueba están en español — un modelo solo-inglés degrada la similitud coseno ante sinonimia o
+lenguaje coloquial en español.
 
 `_build_embeddings()` está decorada con `@lru_cache(maxsize=1)`: a diferencia de un proveedor
 hosteado (una llamada HTTP liviana) o de Ollama (el modelo ya vive cargado en el proceso de
@@ -91,7 +115,9 @@ un modelo de embeddings y consultar con otro distinto, lo que vuelve la distanci
 inútil sin que nada lo avise en tiempo de ejecución — acá es estructuralmente imposible que
 ocurra, porque solo hay una función que construye embeddings en todo el proyecto.
 
-## Módulo de ingesta (`ingest.py`)
+## Arquitectura interna
+
+### Módulo de ingesta (`ingest.py`)
 
 `ingest_documentos()`:
 
@@ -106,19 +132,15 @@ ocurra, porque solo hay una función que construye embeddings en todo el proyect
    colección `manuales_tecnicos`), creada con `collection_metadata={"hnsw:space": "cosine"}`.
 
 **Por qué jerárquico y no un splitter plano**: el splitter plano original (una sola pasada de
-`RecursiveCharacterTextSplitter` sobre el documento completo) fue la causa raíz del "Hallazgo"
-documentado más abajo -- un corte por cantidad de caracteres, ciego al contenido, separó dentro de
-`runbook_incidentes.md` el síntoma/causa de un incidente de su propia sección de **Resolución**,
-en fragmentos distintos. `MarkdownHeaderTextSplitter` evita eso de raíz: mantiene cada `##`
-(ej. "Incidente 1" completo, con síntoma + causa + resolución) en un solo fragmento siempre que
-entre en `chunk_size`; solo recurre al fallback de caracteres para las 3 secciones del corpus que
-efectivamente lo superan (`Componentes principales`, `Proceso de despliegue a producción`,
-`Incidente 1`) -- y ahí corta *dentro* de esa sección puntual, nunca mezclando contenido de dos
-secciones o documentos distintos en el mismo fragmento (a diferencia del splitter plano).
-**Verificado, no solo en teoría**: la misma pregunta que antes daba "No lo sé" (ver "Hallazgo") --
-"¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?" --
-ahora recupera la sección completa de "Incidente 1" (con la Resolución adentro) y responde
-correctamente con los 3 pasos reales del runbook.
+`RecursiveCharacterTextSplitter` sobre el documento completo) cortaba por cantidad de caracteres,
+ciego al contenido — causa raíz de un hallazgo real, documentado en detalle en
+[Evidencia real de ejecución](#evidencia-real-de-ejecución). `MarkdownHeaderTextSplitter` evita
+eso de raíz: mantiene cada `##` (ej. "Incidente 1" completo, con síntoma + causa + resolución) en
+un solo fragmento siempre que entre en `chunk_size`; solo recurre al fallback de caracteres para
+las 3 secciones del corpus que efectivamente lo superan (`Componentes principales`,
+`Proceso de despliegue a producción`, `Incidente 1`) — y ahí corta *dentro* de esa sección
+puntual, nunca mezclando contenido de dos secciones o documentos distintos en el mismo fragmento
+(a diferencia del splitter plano).
 
 **Métrica de distancia explícita, no la default implícita**: sin especificar `hnsw:space`, Chroma
 usa L2 al cuadrado por default, no coseno. Como los embeddings ya están normalizados
@@ -147,7 +169,7 @@ ingest_documentos()` -- si no se pasa `vectorstore`, reconecta desde cero) -- in
 tenés la instancia a mano, y un riesgo real de contención si en el futuro esto corriera con
 requests concurrentes sobre el mismo archivo SQLite.
 
-## Cadena LCEL de generación grounded (`chain.py`)
+### Cadena LCEL de generación grounded (`chain.py`)
 
 ```python
 PROMPT = ChatPromptTemplate.from_messages([...]).partial(format_instructions=parser.get_format_instructions())
@@ -174,18 +196,14 @@ cadena_generacion = pipeline.with_retry(
   incidente pero no sus pasos de resolución no alcanza para responder "cómo se resuelve"). También
   instruye a no mezclar datos de fragmentos de documentos/incidentes distintos como si fueran una
   sola respuesta.
-- **Instrucción explícita de fidelidad técnica**: una vez resuelto el chunking (splitter
-  jerárquico, ver más abajo), apareció un problema distinto -- el modelo **sí** encontraba el
-  contexto correcto, pero lo parafraseaba perdiendo datos puntuales al redactar la respuesta. Con
-  la pregunta de resolución del pool de PostgreSQL, "escalar horizontalmente el número de
-  **réplicas de PgBouncer** o subir el límite de conexiones a **150**" se resumía a "escalar el
-  sistema" -- exactamente el tipo de dato operativo que alguien de guardia necesita, perdido en la
-  paráfrasis. El prompt original no decía nada sobre *cómo* redactar cuando el contexto sí alcanza,
-  solo sobre qué hacer cuando no alcanza. Se agregó una instrucción de "fidelidad técnica": pasos,
-  comandos, valores numéricos o nombres de parámetros puntuales se reproducen tal cual aparecen en
-  el CONTEXTO, no se resumen ni parafrasean aunque conserven el sentido general -- con un ejemplo
-  concreto (el mismo caso real) anclando el criterio. Verificado: la misma pregunta ahora conserva
-  "réplicas de PgBouncer" y "150" textualmente en la respuesta.
+- **Instrucción explícita de fidelidad técnica**: una vez resuelto el chunking, apareció un
+  problema distinto — el modelo **sí** encontraba el contexto correcto, pero lo parafraseaba
+  perdiendo datos puntuales (comandos, valores numéricos, nombres de parámetros) al redactar la
+  respuesta. El prompt original no decía nada sobre *cómo* redactar cuando el contexto sí alcanza,
+  solo sobre qué hacer cuando no alcanza. Se agregó una instrucción de "fidelidad técnica" —
+  reproducir esos datos tal cual aparecen en el CONTEXTO, no resumirlos ni parafrasearlos aunque
+  conserven el sentido general — con un ejemplo concreto anclado en un caso real (ver
+  [Evidencia real de ejecución](#evidencia-real-de-ejecución)).
 - **`_validar_salida`** (mismo criterio que `_validar_salida` del Módulo 2) chequea, en este
   orden:
   1. El `finish_reason` (OpenAI/Ollama) / `stop_reason` (Anthropic) del mensaje crudo del LLM. Si
@@ -226,15 +244,17 @@ cadena_generacion = pipeline.with_retry(
   parecido, no `0.0`. Ej.: `arquitectura_sistema.md (similitud=54.26%)`.
 - **El contenido completo de cada chunk recuperado se loguea a nivel `DEBUG`** (no `INFO`, para no
   ensuciar el log por default): fue justamente inspeccionando esto durante el desarrollo que se
-  detectó el problema real que motivó el splitter jerárquico (ver "Módulo de ingesta" y
-  "Hallazgo" más abajo) -- se dejó como herramienta de diagnóstico permanente, no como algo
-  puntual. Para verlo, subí el nivel del logger a `DEBUG` en `rag/main.py` (o el que corresponda).
+  detectó el problema real que motivó el splitter jerárquico (ver
+  [Módulo de ingesta](#módulo-de-ingesta-ingestpy) y
+  [Evidencia real de ejecución](#evidencia-real-de-ejecución)) -- se dejó como herramienta de
+  diagnóstico permanente, no como algo puntual. Para verlo, subí el nivel del logger a `DEBUG` en
+  `rag/main.py` (o el que corresponda).
 
 `answer_question()` es el punto de entrada end-to-end:
 
-1. **Retrieval**: `vectorstore.as_retriever(search_kwargs={"k": 4})` — `top_k=4`, dentro del
-   rango 3-5 que recomienda la consigna para evitar el "contexto infinito" (degradación por
-   *lost in the middle* y gasto de tokens de más).
+1. **Retrieval**: `vectorstore.asimilarity_search_with_score(pregunta, k=top_k)` — `top_k=4`,
+   dentro del rango 3-5 que recomienda la consigna para evitar el "contexto infinito" (degradación
+   por *lost in the middle* y gasto de tokens de más).
 2. Arma el string de contexto con `_format_docs()`, marcando la fuente de cada fragmento.
 3. Corre `cadena_generacion` con `{"contexto": ..., "pregunta": ...}`.
 4. **Las `fuentes` finales se calculan en código**, no las decide el LLM: se toman de la
@@ -258,7 +278,7 @@ Corrida real (`python -m rag.main`, embeddings
   "pregunta": "¿Qué componente es el cuello de botella histórico del sistema bajo carga alta, y por qué?",
   "respuesta": "El cuello de botella histórico del sistema bajo carga alta es el **pool de conexiones a PostgreSQL**. Específicamente, cuando hay más de 500 pedidos concurrentes, el límite de 100 conexiones de PgBouncer se satura, lo que causa que las nuevas requests queden esperando una conexión libre, generando timeouts intermitentes en el endpoint `/v1/pedidos`.",
   "contexto_encontrado": true,
-  "fuentes": ["arquitectura_sistema.md", "monitoreo_alertas.md", "normativa_despliegue.md"]
+  "fuentes": ["arquitectura_sistema.md", "monitoreo_alertas.md"]
 }
 ```
 
@@ -307,23 +327,25 @@ es que el sistema prefiere decir "No lo sé" antes que inventar pasos de resoluc
 que es exactamente lo que pide la consigna.
 
 **Segunda instancia del mismo trade-off, tras cambiar a un modelo de embeddings multilingüe**: al
-pasar de `all-MiniLM-L6-v2` a `paraphrase-multilingual-MiniLM-L12-v2` (ver sección de diseño más
-arriba), el *ranking* de similitud cambia -- son modelos distintos, con espacios semánticos
-distintos -- y una pregunta que antes se respondía bien puede dejar de estarlo, y viceversa. Con el
-modelo multilingüe (y todavía con el splitter plano), la pregunta "¿Qué umbral de uso de conexiones
-de PgBouncer dispara una alerta?" recuperó un fragmento distinto de `monitoreo_alertas.md` (la
-sección de "Dashboards de referencia", que no menciona ningún umbral) en vez del fragmento con
-"Alerta al superar el 80% de uso sostenido durante más de 2 minutos" -- y el sistema, correctamente,
-volvió a responder "No lo sé" en vez de inventar un número. No fue una regresión del cambio de
-modelo: fue evidencia de que el *ranking* de similitud es sensible al modelo de embeddings usado, y
-de que el sistema se comporta de forma consistente (honesto ante la falta del dato puntual) sin
-importar cuál sea la causa concreta de que el fragmento correcto no entre en el `top_k`.
+pasar de `all-MiniLM-L6-v2` a `paraphrase-multilingual-MiniLM-L12-v2` (ver sección de
+[Diseño](#embeddings-locales-hugging-face)), el *ranking* de similitud cambia -- son modelos
+distintos, con espacios semánticos distintos -- y una pregunta que antes se respondía bien puede
+dejar de estarlo, y viceversa. Con el modelo multilingüe (y todavía con el splitter plano), la
+pregunta "¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?" recuperó un fragmento
+distinto de `monitoreo_alertas.md` (la sección de "Dashboards de referencia", que no menciona
+ningún umbral) en vez del fragmento con "Alerta al superar el 80% de uso sostenido durante más de
+2 minutos" -- y el sistema, correctamente, volvió a responder "No lo sé" en vez de inventar un
+número. No fue una regresión del cambio de modelo: fue evidencia de que el *ranking* de similitud
+es sensible al modelo de embeddings usado, y de que el sistema se comporta de forma consistente
+(honesto ante la falta del dato puntual) sin importar cuál sea la causa concreta de que el
+fragmento correcto no entre en el `top_k`.
 
 **Ambos casos, resueltos con el splitter jerárquico** (`MarkdownHeaderTextSplitter` +
-`RecursiveCharacterTextSplitter` como fallback, ver "Módulo de ingesta" más arriba): al mantener
-cada sección de encabezado completa en un solo fragmento en vez de cortar ciegamente por cantidad
-de caracteres, las dos preguntas que antes daban "No lo sé" ahora recuperan la sección correcta
-completa y responden con el dato puntual real:
+`RecursiveCharacterTextSplitter` como fallback, ver
+[Módulo de ingesta](#módulo-de-ingesta-ingestpy)): al mantener cada sección de encabezado completa
+en un solo fragmento en vez de cortar ciegamente por cantidad de caracteres, las dos preguntas que
+antes daban "No lo sé" ahora recuperan la sección correcta completa y responden con el dato
+puntual real:
 
 ```json
 {
@@ -338,7 +360,8 @@ completa y responden con el dato puntual real:
 respuesta decía "escalar horizontalmente el sistema" -- el modelo sí había encontrado el contexto
 correcto, pero al redactar perdió los datos puntuales ("réplicas de PgBouncer", "150") en una
 paráfrasis genérica. Ese fue el hallazgo que motivó agregar la instrucción de "fidelidad técnica"
-al prompt (ver sección anterior); el JSON de arriba ya refleja el comportamiento corregido.
+al prompt (ver [Cadena LCEL](#cadena-lcel-de-generación-grounded-chainpy)); el JSON de arriba ya
+refleja el comportamiento corregido.
 
 ```json
 {
@@ -371,7 +394,7 @@ ciego al contenido.
 pytest rag/tests/ -v
 ```
 
-34 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
+37 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
 
 - `test_schemas.py`: validación de `RespuestaLLM` (respuesta no vacía, limpieza de espacios,
   campos requeridos, tipos, normalización de `respuesta` a `NO_CONTEXTO_MENSAJE` cuando
@@ -381,7 +404,10 @@ pytest rag/tests/ -v
   inyectado vía monkeypatch de `_build_embeddings`, con ChromaDB real apuntando a un directorio
   temporal. Cubre indexación real, filtrado de archivos no `.txt`/`.md`, no-reindexación si la
   colección ya está poblada, `force_reindex=True`, y error si el directorio de documentos está
-  vacío.
+  vacío. `TestFragmentarDocumento` prueba el splitter jerárquico en aislamiento: una sección corta
+  mantiene junto su encabezado y contenido, una sección larga activa el fallback de
+  `RecursiveCharacterTextSplitter` sin mezclar la sección vecina, y un texto sin encabezados
+  Markdown cae directo al fallback.
 - `test_chain.py`: mockea `_build_model` con `FakeListChatModel` (devuelve, en orden, las
   respuestas configuradas por cada test) para probar `_format_docs` y `_build_model` (selección de
   proveedor). `_validar_salida` se prueba en aislamiento: acepta una salida completa, rechaza
