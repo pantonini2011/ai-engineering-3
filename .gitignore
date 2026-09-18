@@ -7,6 +7,7 @@ __pycache__/
 vectorstore/
 rag/rag.log
 my_local_db/
+.ipynb_checkpoints/
 
 # Archivos sueltos que no son parte de esta entrega
 ejercio3.py

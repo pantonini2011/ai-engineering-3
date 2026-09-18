@@ -35,6 +35,7 @@ rag/
 ├── chain.py                     # Retriever + cadena LCEL (PROMPT | llm | PydanticOutputParser)
 ├── main.py                       # Script de demo: preguntas con y sin respuesta en el contexto
 └── tests/                        # Suite de tests con pytest (embeddings/LLM mockeados, sin red)
+rag_demo.ipynb                # Notebook: mismo flujo que rag.main, con salidas visibles inline
 vectorstore/                  # Colección persistida de ChromaDB (generada al correr, gitignored)
 ```
 
@@ -66,6 +67,15 @@ python -m rag.main
 Esto ingesta `rag/docs/` (si `vectorstore/` no existe aún) y corre 5 preguntas: 4 con
 respuesta en el contexto y 1 deliberadamente fuera de él, para verificar el comportamiento
 "No lo sé".
+
+**Versión notebook** (mismo flujo, con salida de cada paso visible inline en vez de solo en la
+terminal): `rag_demo.ipynb`, ya subido con las salidas de una corrida real -- se puede leer
+directamente en GitHub sin ejecutarlo. Para correrlo de nuevo:
+
+```bash
+pip install -r requirements-dev.txt   # suma jupyter/nbclient/ipykernel, no hace falta para rag.main
+jupyter notebook rag_demo.ipynb
+```
 
 ## Diseño
 
