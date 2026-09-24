@@ -9,12 +9,15 @@ pedidos (FastAPI + PostgreSQL + Redis + Celery) — el mismo sistema descripto e
 [Módulo 2](https://github.com/pantonini2011/ai-engineering-2), para mantener continuidad entre
 entregas: arquitectura, runbook de incidentes, normativa de despliegue y monitoreo/alertas.
 
+**Entregable**: el script `rag/main.py` (se corre con `python -m rag.main`, ver
+[Guía de ejecución](#guía-de-ejecución)). La consigna original está en
+[`preentrega3.md`](preentrega3.md).
+
 ## Índice
 
+- [Checklist de la consigna](#checklist-de-la-consigna)
+- [Guía de ejecución](#guía-de-ejecución)
 - [Estructura](#estructura)
-- [Requisitos](#requisitos)
-- [Instalación](#instalación)
-- [Cómo correrlo](#cómo-correrlo)
 - [Diseño](#diseño)
   - [Qué es "local" acá, y qué no](#qué-es-local-acá-y-qué-no)
   - [Embeddings locales (Hugging Face)](#embeddings-locales-hugging-face)
@@ -25,56 +28,128 @@ entregas: arquitectura, runbook de incidentes, normativa de despliegue y monitor
 - [Errores comunes evitados (según la consigna)](#errores-comunes-evitados-según-la-consigna)
 - [Tests](#tests)
 
+## Checklist de la consigna
+
+Cada requisito de [`preentrega3.md`](preentrega3.md), dónde está implementado y con qué se
+verifica. Los logs de [`evidencia/`](evidencia/) son salidas reales de `python -m rag.main` y
+`pytest`, sin editar (ver [`evidencia/README.md`](evidencia/README.md)).
+
+### Componentes a entregar
+
+| Requisito | Implementación | Evidencia verificable |
+|---|---|---|
+| Script/notebook con flujo RAG end-to-end | [`rag/main.py`](rag/main.py) → `main()`: ingesta, 4 preguntas con contexto y 1 sin contexto | [`evidencia/corrida_1_indexacion.txt`](evidencia/corrida_1_indexacion.txt) |
+| **Módulo de ingesta**: toma documentos `.txt`/`.md`, los fragmenta y los persiste en ChromaDB | [`rag/ingest.py`](rag/ingest.py) → `ingest_documentos()` (usa `_cargar_documentos()` y `_fragmentar_documento()`) | Log: `Indexando 24 fragmentos de 4 documento(s) en la colección 'manuales_tecnicos'` · tests `test_ingesta_indexa_y_persiste`, `test_ingesta_ignora_archivos_no_txt_md` |
+| **Retriever**: convierte la pregunta en embedding y trae los fragmentos más relevantes | [`rag/chain.py`](rag/chain.py) → `answer_question()`: `vectorstore.asimilarity_search_with_score(pregunta, k=TOP_K)` | Log: `Recuperados 4 fragmento(s): ['arquitectura_sistema.md (similitud=54.26%)', ...]` |
+| **Generación grounded** con una cadena LCEL | [`rag/chain.py`](rag/chain.py) → `build_chain()`: `PROMPT \| llm \| RunnableLambda(_validar_salida)` + `.with_retry()` | Respuestas JSON en la corrida 1 · tests `TestBuildChain` en [`rag/tests/test_chain.py`](rag/tests/test_chain.py) |
+| El prompt instruye a decir **"No lo sé"** si la respuesta no está en el contexto | [`rag/chain.py`](rag/chain.py) → `PROMPT`; frase fija `NO_CONTEXTO_MENSAJE` en [`rag/schemas.py`](rag/schemas.py) | Pregunta sobre vacaciones → `"No lo sé, no tengo información sobre eso en el contexto disponible."`, `contexto_encontrado: false` · test `test_normaliza_respuesta_cuando_no_hay_contexto` |
+
+### Pasos sugeridos
+
+| Paso | Implementación | Evidencia verificable |
+|---|---|---|
+| 3 o 4 archivos de texto sobre un tema específico | 4 manuales `.md` en [`rag/docs/`](rag/docs/) | Log: `... de 4 documento(s)` |
+| Fragmentar con `RecursiveCharacterTextSplitter` | [`rag/ingest.py`](rag/ingest.py) → `_fragmentar_documento()`: `RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)`, aplicado dentro de cada sección Markdown (ver [por qué](#módulo-de-ingesta-ingestpy)) | Tests `TestFragmentarDocumento` en [`rag/tests/test_ingest.py`](rag/tests/test_ingest.py) |
+| Cliente ChromaDB persistente en una carpeta local (`./vectorstore`) | [`rag/ingest.py`](rag/ingest.py) → `PERSIST_DIRECTORY = <raíz>/vectorstore`, colección `manuales_tecnicos` | Log: `... (D:\...\vectorstore)`; la carpeta queda creada tras correr |
+| Mismo modelo de embeddings para indexar y consultar | [`rag/ingest.py`](rag/ingest.py) → `_build_embeddings()`, única función que crea embeddings en el proyecto | Las similitudes de la corrida 2 (base ya persistida) son idénticas a las de la corrida 1 |
+| Prompt de sistema como "filtro de veracidad" | [`rag/chain.py`](rag/chain.py) → `PROMPT`: "responde EXCLUSIVAMENTE en base al CONTEXTO..." | Ver texto completo del prompt en el código |
+| Salida por un `PydanticOutputParser` | [`rag/chain.py`](rag/chain.py) → `parser = PydanticOutputParser(pydantic_object=RespuestaLLM)`, usado en `_validar_salida()` | Tests `test_acepta_salida_completa`, `test_rechaza_json_invalido` |
+
+### Errores comunes a evitar
+
+| Error | Cómo se evita | Evidencia verificable |
+|---|---|---|
+| Contexto infinito | `TOP_K = 4` en [`rag/chain.py`](rag/chain.py) (rango 3-5) | Log: cada pregunta recupera exactamente `4 fragmento(s)` |
+| Embeddings no coincidentes | Un solo `_build_embeddings()` para ingesta y consulta | Corrida 2: mismo ranking y mismas similitudes que la corrida 1 |
+| Falta de persistencia (re-indexar siempre) | `_coleccion_ya_poblada()` en [`rag/ingest.py`](rag/ingest.py): si la colección ya tiene documentos, no re-indexa | [`evidencia/corrida_2_persistencia.txt`](evidencia/corrida_2_persistencia.txt): `Colección 'manuales_tecnicos' ya poblada ... se omite la re-indexación.` · test `test_ingesta_no_reindexa_si_ya_esta_poblada` |
+
+## Guía de ejecución
+
+### Requisitos
+
+- Python 3.12. En Windows, con el `py launcher`: `py -3.12`.
+- Una API key de Anthropic (proveedor de generación por default). Opcional: OpenAI u
+  [Ollama](https://ollama.com) si se usa `provider="openai"` / `provider="ollama"`.
+- Conexión a internet la primera vez: el modelo de embeddings
+  `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` se descarga una vez desde
+  Hugging Face Hub y queda cacheado en disco. No necesita API key.
+
+### Paso a paso
+
+1. **Clonar el repositorio**
+
+   ```bash
+   git clone https://github.com/pantonini2011/ai-engineering-3.git
+   cd ai-engineering-3
+   ```
+
+2. **Crear y activar un entorno virtual**
+
+   ```bash
+   py -3.12 -m venv .venv          # Linux/Mac: python3.12 -m venv .venv
+   .venv\Scripts\activate           # Linux/Mac: source .venv/bin/activate
+   ```
+
+3. **Instalar dependencias**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configurar credenciales**: copiar `.env.example` a `.env` y completar `ANTHROPIC_API_KEY`.
+
+   ```bash
+   copy .env.example .env           # Linux/Mac: cp .env.example .env
+   ```
+
+5. **Correr el flujo RAG end-to-end**
+
+   ```bash
+   python -m rag.main
+   ```
+
+   Qué hace:
+   - Si `./vectorstore` no existe, fragmenta los 4 documentos de `rag/docs/` y los persiste en
+     ChromaDB. Log esperado: `Indexando 24 fragmentos de 4 documento(s) ...` y
+     `Indexación completa: 24 fragmentos persistidos.`
+   - Hace 5 preguntas: 4 con respuesta en los documentos y 1 deliberadamente fuera de ellos.
+     Cada respuesta se imprime como JSON (`pregunta`, `respuesta`, `contexto_encontrado`,
+     `fuentes`). La última tiene que ser `"No lo sé, no tengo información sobre eso en el
+     contexto disponible."` con `contexto_encontrado: false`.
+   - El log también queda guardado en `rag/rag.log`.
+
+   Salida completa de referencia: [`evidencia/corrida_1_indexacion.txt`](evidencia/corrida_1_indexacion.txt).
+
+6. **Verificar la persistencia**: correr `python -m rag.main` una segunda vez. Ahora el log
+   tiene que decir `Colección 'manuales_tecnicos' ya poblada en ...: se omite la re-indexación.`
+   Referencia: [`evidencia/corrida_2_persistencia.txt`](evidencia/corrida_2_persistencia.txt).
+
+7. **Correr los tests** (no necesitan API key ni red: embeddings y LLM están mockeados)
+
+   ```bash
+   pytest rag/tests/ -v
+   ```
+
+   Resultado esperado: `37 passed`. Referencia: [`evidencia/tests_pytest.txt`](evidencia/tests_pytest.txt).
+
+Para re-indexar desde cero (por ejemplo, después de cambiar `EMBEDDING_MODEL` en `.env`),
+borrar la carpeta `vectorstore/` y volver a correr el paso 5.
+
 ## Estructura
 
 ```
 rag/
-├── docs/                     # El "cerebro": 4 manuales técnicos (.md) sobre la plataforma de pedidos
-├── schemas.py                 # RespuestaLLM (lo que decide el modelo) y RespuestaRAG (contrato final)
-├── ingest.py                   # Módulo de ingesta: chunking + persistencia en ChromaDB
-├── chain.py                     # Retriever + cadena LCEL (PROMPT | llm | PydanticOutputParser)
-├── main.py                       # Script de demo: preguntas con y sin respuesta en el contexto
-└── tests/                        # Suite de tests con pytest (embeddings/LLM mockeados, sin red)
-rag_demo.ipynb                # Notebook: mismo flujo que rag.main, con salidas visibles inline
-vectorstore/                  # Colección persistida de ChromaDB (generada al correr, gitignored)
-```
-
-## Requisitos
-
-- Python 3.12 (mismo criterio que los Módulos 1 y 2). En Windows, con el `py launcher`:
-  `py -3.12 -m venv .venv`.
-- Una API key de Anthropic (proveedor de generación por default) y/o de OpenAI.
-- Conexión a internet la primera vez que se corre: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
-  (modelo de embeddings) se descarga una vez desde Hugging Face Hub y queda cacheado en disco;
-  no hace falta ninguna API key para usarlo. [Ollama](https://ollama.com) es opcional, solo si se
-  usa `provider="ollama"` para la generación.
-
-## Instalación
-
-```bash
-py -3.12 -m venv .venv          # o `python3.12 -m venv .venv` fuera de Windows
-.venv\Scripts\activate           # Linux/Mac: source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env           # y completá tus credenciales
-```
-
-## Cómo correrlo
-
-```bash
-python -m rag.main
-```
-
-Esto ingesta `rag/docs/` (si `vectorstore/` no existe aún) y corre 5 preguntas: 4 con
-respuesta en el contexto y 1 deliberadamente fuera de él, para verificar el comportamiento
-"No lo sé".
-
-**Versión notebook** (mismo flujo, con salida de cada paso visible inline en vez de solo en la
-terminal): `rag_demo.ipynb`, ya subido con las salidas de una corrida real -- se puede leer
-directamente en GitHub sin ejecutarlo. Para correrlo de nuevo:
-
-```bash
-pip install -r requirements-dev.txt   # suma jupyter/nbclient/ipykernel, no hace falta para rag.main
-jupyter notebook rag_demo.ipynb
+├── docs/          # El "cerebro": 4 manuales técnicos (.md) sobre la plataforma de pedidos
+├── schemas.py     # RespuestaLLM (lo que decide el modelo) y RespuestaRAG (contrato final)
+├── ingest.py      # Módulo de ingesta: chunking + persistencia en ChromaDB
+├── chain.py       # Retriever + cadena LCEL (PROMPT | llm | PydanticOutputParser)
+├── main.py        # Script entregable: preguntas con y sin respuesta en el contexto
+└── tests/         # Suite de tests con pytest (embeddings/LLM mockeados, sin red)
+evidencia/         # Salidas reales de `python -m rag.main` (2 corridas) y de `pytest -v`
+preentrega3.md     # Consigna
+.env.example       # Plantilla de configuración (API keys, modelos)
+requirements.txt   # Dependencias
+vectorstore/       # Colección persistida de ChromaDB (se genera al correr, gitignored)
 ```
 
 ## Diseño

@@ -1,0 +1,48 @@
+$ pytest rag/tests/ -v
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-8.4.2, pluggy-1.6.0 -- D:\ai-engineering-3\.venv\Scripts\python.exe
+rootdir: D:\ai-engineering-3
+configfile: pytest.ini
+plugins: anyio-4.15.1, langsmith-0.12.6, asyncio-0.26.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 37 items
+
+rag/tests/test_chain.py::TestFormatDocs::test_formatea_documentos_con_fuente PASSED [  2%]
+rag/tests/test_chain.py::TestFormatDocs::test_lista_vacia PASSED         [  5%]
+rag/tests/test_chain.py::TestBuildModel::test_provider_desconocido_lanza_error PASSED [  8%]
+rag/tests/test_chain.py::TestBuildModel::test_anthropic_por_default PASSED [ 10%]
+rag/tests/test_chain.py::TestBuildModel::test_openai PASSED              [ 13%]
+rag/tests/test_chain.py::TestValidarSalida::test_acepta_salida_completa PASSED [ 16%]
+rag/tests/test_chain.py::TestValidarSalida::test_rechaza_finish_reason_length PASSED [ 18%]
+rag/tests/test_chain.py::TestValidarSalida::test_rechaza_stop_reason_max_tokens_anthropic PASSED [ 21%]
+rag/tests/test_chain.py::TestValidarSalida::test_rechaza_json_invalido PASSED [ 24%]
+rag/tests/test_chain.py::TestBuildChain::test_respuesta_valida_en_primer_intento PASSED [ 27%]
+rag/tests/test_chain.py::TestBuildChain::test_reintenta_ante_salida_mal_formada_y_se_recupera PASSED [ 29%]
+rag/tests/test_chain.py::TestBuildChain::test_agota_reintentos_y_propaga_error PASSED [ 32%]
+rag/tests/test_chain.py::TestBuildChain::test_no_reintenta_ante_error_no_relacionado PASSED [ 35%]
+rag/tests/test_chain.py::TestAnswerQuestion::test_con_contexto_encontrado_incluye_fuentes_deduplicadas PASSED [ 37%]
+rag/tests/test_chain.py::TestAnswerQuestion::test_sin_contexto_encontrado_fuentes_vacias PASSED [ 40%]
+rag/tests/test_chain.py::TestAnswerQuestion::test_sin_documentos_recuperados PASSED [ 43%]
+rag/tests/test_chain.py::TestAnswerQuestion::test_propaga_error_de_retrieval_con_log PASSED [ 45%]
+rag/tests/test_ingest.py::test_ingesta_indexa_y_persiste PASSED          [ 48%]
+rag/tests/test_ingest.py::test_ingesta_ignora_archivos_no_txt_md PASSED  [ 51%]
+rag/tests/test_ingest.py::test_ingesta_no_reindexa_si_ya_esta_poblada PASSED [ 54%]
+rag/tests/test_ingest.py::test_ingesta_force_reindex_vuelve_a_indexar PASSED [ 56%]
+rag/tests/test_ingest.py::test_ingesta_sin_documentos_lanza_error PASSED [ 59%]
+rag/tests/test_ingest.py::TestFragmentarDocumento::test_mantiene_junta_una_seccion_corta_con_su_encabezado PASSED [ 62%]
+rag/tests/test_ingest.py::TestFragmentarDocumento::test_aplica_fallback_dentro_de_una_seccion_larga_sin_mezclar_otra PASSED [ 64%]
+rag/tests/test_ingest.py::TestFragmentarDocumento::test_texto_sin_encabezados_cae_directo_al_fallback PASSED [ 67%]
+rag/tests/test_schemas.py::TestRespuestaLLM::test_acepta_datos_validos PASSED [ 70%]
+rag/tests/test_schemas.py::TestRespuestaLLM::test_normaliza_respuesta_cuando_no_hay_contexto PASSED [ 72%]
+rag/tests/test_schemas.py::TestRespuestaLLM::test_no_toca_la_respuesta_cuando_hay_contexto PASSED [ 75%]
+rag/tests/test_schemas.py::TestRespuestaLLM::test_rechaza_respuesta_vacia PASSED [ 78%]
+rag/tests/test_schemas.py::TestRespuestaLLM::test_rechaza_respuesta_solo_espacios PASSED [ 81%]
+rag/tests/test_schemas.py::TestRespuestaLLM::test_limpia_espacios PASSED [ 83%]
+rag/tests/test_schemas.py::TestRespuestaLLM::test_rechaza_campo_faltante PASSED [ 86%]
+rag/tests/test_schemas.py::TestRespuestaLLM::test_rechaza_tipo_incorrecto_en_contexto_encontrado PASSED [ 89%]
+rag/tests/test_schemas.py::TestRespuestaRAG::test_acepta_datos_validos_con_fuentes PASSED [ 91%]
+rag/tests/test_schemas.py::TestRespuestaRAG::test_fuentes_default_vacia PASSED [ 94%]
+rag/tests/test_schemas.py::TestRespuestaRAG::test_rechaza_pregunta_vacia PASSED [ 97%]
+rag/tests/test_schemas.py::TestRespuestaRAG::test_rechaza_respuesta_vacia PASSED [100%]
+
+============================= 37 passed in 14.05s =============================

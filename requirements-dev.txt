@@ -1,6 +1,0 @@
--r requirements.txt
-
-# Solo para correr/regenerar rag_demo.ipynb (no hace falta para rag.main ni para los tests).
-notebook>=7.0.0
-nbclient>=0.10.0
-ipykernel>=6.29.0
