@@ -1,8 +1,11 @@
+from datetime import datetime
+
 import pytest
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
-from src import ingest as ingest_module
+from src import client as client_module
+from src import ingestion as ingest_module
 
 
 class FakeEmbeddings(Embeddings):
@@ -24,7 +27,7 @@ class FakeEmbeddings(Embeddings):
 
 @pytest.fixture(autouse=True)
 def fake_embeddings(monkeypatch):
-    monkeypatch.setattr(ingest_module, "_build_embeddings", lambda: FakeEmbeddings())
+    monkeypatch.setattr(client_module, "build_embeddings", lambda: FakeEmbeddings())
 
 
 @pytest.fixture
@@ -57,6 +60,17 @@ def test_ingesta_ignora_archivos_no_txt_md(docs_dir, persist_dir):
     assert "dos.txt" in fuentes
 
 
+def test_ingesta_guarda_esquema_de_metadatos(docs_dir, persist_dir):
+    """Cada fragmento persistido lleva source, env y created_at (ISO 8601)."""
+    vectorstore = ingest_module.ingest_documentos(directorio=str(docs_dir), persist_directory=persist_dir)
+    metadatas = vectorstore.get()["metadatas"]
+    assert metadatas
+    for m in metadatas:
+        assert m["source"] in ("uno.md", "dos.txt")
+        assert m["env"] == client_module.RAG_ENV
+        datetime.fromisoformat(m["created_at"])
+
+
 def test_ingesta_no_reindexa_si_ya_esta_poblada(docs_dir, persist_dir, monkeypatch):
     ingest_module.ingest_documentos(directorio=str(docs_dir), persist_directory=persist_dir)
 
@@ -73,7 +87,8 @@ def test_ingesta_no_reindexa_si_ya_esta_poblada(docs_dir, persist_dir, monkeypat
 
 
 def test_ingesta_force_reindex_vuelve_a_indexar(docs_dir, persist_dir, monkeypatch):
-    ingest_module.ingest_documentos(directorio=str(docs_dir), persist_directory=persist_dir)
+    original_vs = ingest_module.ingest_documentos(directorio=str(docs_dir), persist_directory=persist_dir)
+    cantidad_original = original_vs._collection.count()
 
     llamadas = []
     original = ingest_module.Chroma.from_documents
@@ -83,8 +98,12 @@ def test_ingesta_force_reindex_vuelve_a_indexar(docs_dir, persist_dir, monkeypat
         return original(*args, **kwargs)
 
     monkeypatch.setattr(ingest_module.Chroma, "from_documents", spy)
-    ingest_module.ingest_documentos(directorio=str(docs_dir), persist_directory=persist_dir, force_reindex=True)
+    vectorstore = ingest_module.ingest_documentos(
+        directorio=str(docs_dir), persist_directory=persist_dir, force_reindex=True
+    )
     assert len(llamadas) == 1
+    # Re-indexar reemplaza la colección, no le suma una segunda copia.
+    assert vectorstore._collection.count() == cantidad_original
 
 
 def test_colecciones_por_entorno_no_se_pisan(docs_dir, persist_dir):
@@ -94,9 +113,9 @@ def test_colecciones_por_entorno_no_se_pisan(docs_dir, persist_dir):
     ingest_module.ingest_documentos(
         directorio=str(docs_dir), persist_directory=persist_dir, collection_name="manuales_tecnicos_dev"
     )
-    embeddings = ingest_module._build_embeddings()
-    assert ingest_module._coleccion_ya_poblada(persist_dir, "manuales_tecnicos_dev", embeddings)
-    assert not ingest_module._coleccion_ya_poblada(persist_dir, "manuales_tecnicos_prod", embeddings)
+    embeddings = client_module.build_embeddings()
+    assert client_module.coleccion_ya_poblada(persist_dir, "manuales_tecnicos_dev", embeddings)
+    assert not client_module.coleccion_ya_poblada(persist_dir, "manuales_tecnicos_prod", embeddings)
 
 
 def test_ingesta_sin_documentos_lanza_error(tmp_path, persist_dir):

@@ -64,6 +64,9 @@ class FragmentoRecuperado(BaseModel):
         description="Encabezados Markdown de la sección del fragmento (ej. 'Runbook > Incidente 1').",
     )
     similitud: float = Field(description="Similitud coseno con la pregunta (1 - distancia de Chroma); 1.0 = idéntico.")
+    extracto: str = Field(description="Comienzo del texto del fragmento (hasta 120 caracteres).")
+    created_at: Optional[str] = Field(default=None, description="Fecha y hora UTC (ISO 8601) de la indexación.")
+    env: Optional[str] = Field(default=None, description="Entorno (RAG_ENV) en el que se indexó el fragmento.")
 
 
 class RespuestaRAG(BaseModel):

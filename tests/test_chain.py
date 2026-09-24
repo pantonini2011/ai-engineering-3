@@ -18,7 +18,10 @@ class FakeVectorstore:
         # para lo que prueban estos tests -- solo importan los documentos.
         self._docs_con_score = [(doc, 0.1 * i) for i, doc in enumerate(docs)]
 
-    async def asimilarity_search_with_score(self, query, k=None):
+        self.filtro_recibido = None
+
+    async def asimilarity_search_with_score(self, query, k=None, filter=None):
+        self.filtro_recibido = filter
         return self._docs_con_score
 
 
@@ -31,7 +34,7 @@ class FakeChain:
 
 
 class FakeVectorstoreRoto:
-    async def asimilarity_search_with_score(self, query, k=None):
+    async def asimilarity_search_with_score(self, query, k=None, filter=None):
         raise ConnectionError("ChromaDB no disponible")
 
 
@@ -187,10 +190,36 @@ class TestAnswerQuestion:
         )
         resultado = await chain_module.answer_question("algo", vectorstore=vectorstore)
         assert [f.model_dump() for f in resultado.fragmentos_recuperados] == [
-            {"fuente": "runbook_incidentes.md", "seccion": "Runbook > Incidente 1", "similitud": 1.0},
-            {"fuente": "notas.txt", "seccion": None, "similitud": 0.9},
+            {
+                "fuente": "runbook_incidentes.md",
+                "seccion": "Runbook > Incidente 1",
+                "similitud": 1.0,
+                "extracto": "frag 1",
+                "created_at": None,
+                "env": None,
+            },
+            {
+                "fuente": "notas.txt",
+                "seccion": None,
+                "similitud": 0.9,
+                "extracto": "frag 2",
+                "created_at": None,
+                "env": None,
+            },
         ]
         assert resultado.fuentes == []
+
+    async def test_pasa_el_filtro_de_metadata_al_vectorstore(self, monkeypatch):
+        vectorstore = FakeVectorstore([Document(page_content="frag", metadata={"source": "runbook_incidentes.md"})])
+        monkeypatch.setattr(
+            chain_module,
+            "build_chain",
+            lambda provider="openai", model=None: FakeChain(RespuestaLLM(respuesta="Ok.", contexto_encontrado=True)),
+        )
+        await chain_module.answer_question(
+            "algo", vectorstore=vectorstore, filtro={"source": "runbook_incidentes.md"}
+        )
+        assert vectorstore.filtro_recibido == {"source": "runbook_incidentes.md"}
 
     async def test_sin_documentos_recuperados(self, monkeypatch):
         vectorstore = FakeVectorstore([])
