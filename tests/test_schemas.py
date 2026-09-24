@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from rag.schemas import NO_CONTEXTO_MENSAJE, RespuestaLLM, RespuestaRAG
+from src.schemas import NO_CONTEXTO_MENSAJE, RespuestaLLM, RespuestaRAG
 
 
 class TestRespuestaLLM:

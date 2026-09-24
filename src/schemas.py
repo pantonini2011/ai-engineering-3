@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -53,8 +53,21 @@ class RespuestaLLM(BaseModel):
         return self
 
 
+class FragmentoRecuperado(BaseModel):
+    """Un fragmento que trajo el retriever, con su metadata y su score. Se
+    completa en código a partir de lo que devuelve ChromaDB, no lo decide el
+    LLM."""
+
+    fuente: str = Field(description="Archivo de origen del fragmento (metadata `source`).")
+    seccion: Optional[str] = Field(
+        default=None,
+        description="Encabezados Markdown de la sección del fragmento (ej. 'Runbook > Incidente 1').",
+    )
+    similitud: float = Field(description="Similitud coseno con la pregunta (1 - distancia de Chroma); 1.0 = idéntico.")
+
+
 class RespuestaRAG(BaseModel):
-    """Contrato de salida final del sistema RAG, expuesto por `rag.chain`.
+    """Contrato de salida final del sistema RAG, expuesto por `src.chain`.
     Combina lo que el LLM generó (`respuesta`/`contexto_encontrado`, vía
     `RespuestaLLM`) con las fuentes reales de los fragmentos que el retriever
     efectivamente recuperó -- calculadas en código, no por el modelo."""
@@ -67,4 +80,11 @@ class RespuestaRAG(BaseModel):
     fuentes: List[str] = Field(
         default_factory=list,
         description="Nombres de archivo de origen de los fragmentos recuperados y usados como contexto.",
+    )
+    fragmentos_recuperados: List[FragmentoRecuperado] = Field(
+        default_factory=list,
+        description=(
+            "Todos los fragmentos que trajo el retriever (top_k), en orden de similitud, "
+            "con su metadata y score -- aunque el modelo no haya encontrado la respuesta en ellos."
+        ),
     )

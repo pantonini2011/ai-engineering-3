@@ -2,7 +2,7 @@ import pytest
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
-from rag import ingest as ingest_module
+from src import ingest as ingest_module
 
 
 class FakeEmbeddings(Embeddings):
@@ -85,6 +85,18 @@ def test_ingesta_force_reindex_vuelve_a_indexar(docs_dir, persist_dir, monkeypat
     monkeypatch.setattr(ingest_module.Chroma, "from_documents", spy)
     ingest_module.ingest_documentos(directorio=str(docs_dir), persist_directory=persist_dir, force_reindex=True)
     assert len(llamadas) == 1
+
+
+def test_colecciones_por_entorno_no_se_pisan(docs_dir, persist_dir):
+    """Segmentación dev/prod: dos colecciones en el mismo persist_directory
+    son independientes -- poblar la de dev no hace que prod se considere
+    poblada (y viceversa)."""
+    ingest_module.ingest_documentos(
+        directorio=str(docs_dir), persist_directory=persist_dir, collection_name="manuales_tecnicos_dev"
+    )
+    embeddings = ingest_module._build_embeddings()
+    assert ingest_module._coleccion_ya_poblada(persist_dir, "manuales_tecnicos_dev", embeddings)
+    assert not ingest_module._coleccion_ya_poblada(persist_dir, "manuales_tecnicos_prod", embeddings)
 
 
 def test_ingesta_sin_documentos_lanza_error(tmp_path, persist_dir):

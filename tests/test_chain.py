@@ -4,8 +4,8 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
-from rag import chain as chain_module
-from rag.schemas import RespuestaLLM
+from src import chain as chain_module
+from src.schemas import RespuestaLLM
 
 
 def _fake_llm(responses):
@@ -165,6 +165,32 @@ class TestAnswerQuestion:
         resultado = await chain_module.answer_question("pregunta rara", vectorstore=vectorstore)
         assert resultado.fuentes == []
         assert resultado.contexto_encontrado is False
+
+    async def test_expone_fragmentos_con_metadata_y_similitud(self, monkeypatch):
+        """Cada fragmento recuperado sale en la respuesta con su fuente, su
+        sección (encabezados Markdown) y su similitud (1 - distancia), aunque
+        el modelo no haya encontrado la respuesta en ellos."""
+        docs = [
+            Document(
+                page_content="frag 1",
+                metadata={"source": "runbook_incidentes.md", "Header 1": "Runbook", "Header 2": "Incidente 1"},
+            ),
+            Document(page_content="frag 2", metadata={"source": "notas.txt"}),
+        ]
+        vectorstore = FakeVectorstore(docs)  # distancias 0.0 y 0.1
+        monkeypatch.setattr(
+            chain_module,
+            "build_chain",
+            lambda provider="openai", model=None: FakeChain(
+                RespuestaLLM(respuesta="No lo sé.", contexto_encontrado=False)
+            ),
+        )
+        resultado = await chain_module.answer_question("algo", vectorstore=vectorstore)
+        assert [f.model_dump() for f in resultado.fragmentos_recuperados] == [
+            {"fuente": "runbook_incidentes.md", "seccion": "Runbook > Incidente 1", "similitud": 1.0},
+            {"fuente": "notas.txt", "seccion": None, "similitud": 0.9},
+        ]
+        assert resultado.fuentes == []
 
     async def test_sin_documentos_recuperados(self, monkeypatch):
         vectorstore = FakeVectorstore([])

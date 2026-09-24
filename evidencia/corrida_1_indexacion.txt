@@ -1,32 +1,33 @@
-$ python -m rag.main   # primera corrida, sin ./vectorstore
-2026-09-24 20:19:28,666 INFO sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-2026-09-24 20:19:32,534 INFO rag.ingest: Indexando 24 fragmentos de 4 documento(s) en la colección 'manuales_tecnicos' (D:\ai-engineering-3\vectorstore)...
-2026-09-24 20:19:34,218 INFO rag.ingest: Indexación completa: 24 fragmentos persistidos.
-2026-09-24 20:19:34,223 INFO rag.chain: Recuperando contexto para la pregunta: '¿Qué componente es el cuello de botella histórico del sistema bajo carga alta, y por qué?'
-2026-09-24 20:19:34,257 INFO rag.chain: Recuperados 4 fragmento(s): ['arquitectura_sistema.md (similitud=54.26%)', 'monitoreo_alertas.md (similitud=21.45%)', 'monitoreo_alertas.md (similitud=20.03%)', 'monitoreo_alertas.md (similitud=16.51%)']
-2026-09-24 20:19:36,159 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-09-24 20:19:36,205 INFO rag.chain: Validación aceptada en este intento.
-2026-09-24 20:19:36,205 INFO rag.chain: Respuesta generada en 1.99s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md'])
-2026-09-24 20:19:36,205 INFO rag.chain: Recuperando contexto para la pregunta: '¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?'
-2026-09-24 20:19:36,238 INFO rag.chain: Recuperados 4 fragmento(s): ['runbook_incidentes.md (similitud=67.01%)', 'monitoreo_alertas.md (similitud=58.25%)', 'arquitectura_sistema.md (similitud=58.10%)', 'arquitectura_sistema.md (similitud=52.37%)']
-2026-09-24 20:19:37,812 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-09-24 20:19:37,824 INFO rag.chain: Validación aceptada en este intento.
-2026-09-24 20:19:37,824 INFO rag.chain: Respuesta generada en 1.62s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md', 'runbook_incidentes.md'])
-2026-09-24 20:19:37,824 INFO rag.chain: Recuperando contexto para la pregunta: '¿Los viernes se puede desplegar a producción?'
-2026-09-24 20:19:37,848 INFO rag.chain: Recuperados 4 fragmento(s): ['normativa_despliegue.md (similitud=64.64%)', 'monitoreo_alertas.md (similitud=24.77%)', 'monitoreo_alertas.md (similitud=22.71%)', 'runbook_incidentes.md (similitud=20.35%)']
-2026-09-24 20:19:39,469 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-09-24 20:19:39,479 INFO rag.chain: Validación aceptada en este intento.
-2026-09-24 20:19:39,479 INFO rag.chain: Respuesta generada en 1.65s (contexto_encontrado=True, fuentes=['monitoreo_alertas.md', 'normativa_despliegue.md', 'runbook_incidentes.md'])
-2026-09-24 20:19:39,479 INFO rag.chain: Recuperando contexto para la pregunta: '¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?'
-2026-09-24 20:19:39,500 INFO rag.chain: Recuperados 4 fragmento(s): ['monitoreo_alertas.md (similitud=66.55%)', 'runbook_incidentes.md (similitud=65.42%)', 'arquitectura_sistema.md (similitud=62.21%)', 'runbook_incidentes.md (similitud=53.73%)']
-2026-09-24 20:19:41,147 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-09-24 20:19:41,156 INFO rag.chain: Validación aceptada en este intento.
-2026-09-24 20:19:41,156 INFO rag.chain: Respuesta generada en 1.68s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md', 'runbook_incidentes.md'])
-2026-09-24 20:19:41,156 INFO rag.chain: Recuperando contexto para la pregunta: '¿Cuál es la política de vacaciones del equipo de guardia?'
-2026-09-24 20:19:41,178 INFO rag.chain: Recuperados 4 fragmento(s): ['normativa_despliegue.md (similitud=35.92%)', 'runbook_incidentes.md (similitud=24.92%)', 'normativa_despliegue.md (similitud=22.65%)', 'monitoreo_alertas.md (similitud=19.26%)']
-2026-09-24 20:19:42,038 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
-2026-09-24 20:19:42,038 INFO rag.chain: Validación aceptada en este intento.
-2026-09-24 20:19:42,038 INFO rag.chain: Respuesta generada en 0.89s (contexto_encontrado=False, fuentes=[])
+$ python -m src.main   # primera corrida, sin ./vectorstore
+2026-09-24 20:38:44,625 INFO sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+2026-09-24 20:38:48,471 INFO src.ingest: Modelo de embeddings: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 (dimensión 384)
+2026-09-24 20:38:48,471 INFO src.ingest: Indexando 24 fragmentos de 4 documento(s) en la colección 'manuales_tecnicos_dev' (D:\ai-engineering-3\vectorstore)...
+2026-09-24 20:38:49,503 INFO src.ingest: Indexación completa: 24 fragmentos persistidos.
+2026-09-24 20:38:49,503 INFO src.chain: Recuperando contexto para la pregunta: '¿Qué componente es el cuello de botella histórico del sistema bajo carga alta, y por qué?'
+2026-09-24 20:38:49,527 INFO src.chain: Recuperados 4 fragmento(s): ['arquitectura_sistema.md (similitud=54.26%)', 'monitoreo_alertas.md (similitud=21.45%)', 'monitoreo_alertas.md (similitud=20.03%)', 'monitoreo_alertas.md (similitud=16.51%)']
+2026-09-24 20:38:51,371 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-09-24 20:38:51,397 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 20:38:51,397 INFO src.chain: Respuesta generada en 1.89s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md'])
+2026-09-24 20:38:51,397 INFO src.chain: Recuperando contexto para la pregunta: '¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?'
+2026-09-24 20:38:51,421 INFO src.chain: Recuperados 4 fragmento(s): ['runbook_incidentes.md (similitud=67.01%)', 'monitoreo_alertas.md (similitud=58.25%)', 'arquitectura_sistema.md (similitud=58.10%)', 'arquitectura_sistema.md (similitud=52.37%)']
+2026-09-24 20:38:53,078 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-09-24 20:38:53,085 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 20:38:53,086 INFO src.chain: Respuesta generada en 1.69s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md', 'runbook_incidentes.md'])
+2026-09-24 20:38:53,086 INFO src.chain: Recuperando contexto para la pregunta: '¿Los viernes se puede desplegar a producción?'
+2026-09-24 20:38:53,106 INFO src.chain: Recuperados 4 fragmento(s): ['normativa_despliegue.md (similitud=64.64%)', 'monitoreo_alertas.md (similitud=24.77%)', 'monitoreo_alertas.md (similitud=22.71%)', 'runbook_incidentes.md (similitud=20.35%)']
+2026-09-24 20:38:54,740 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-09-24 20:38:54,745 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 20:38:54,745 INFO src.chain: Respuesta generada en 1.66s (contexto_encontrado=True, fuentes=['monitoreo_alertas.md', 'normativa_despliegue.md', 'runbook_incidentes.md'])
+2026-09-24 20:38:54,745 INFO src.chain: Recuperando contexto para la pregunta: '¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?'
+2026-09-24 20:38:54,766 INFO src.chain: Recuperados 4 fragmento(s): ['monitoreo_alertas.md (similitud=66.55%)', 'runbook_incidentes.md (similitud=65.42%)', 'arquitectura_sistema.md (similitud=62.21%)', 'runbook_incidentes.md (similitud=53.73%)']
+2026-09-24 20:38:56,447 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-09-24 20:38:56,447 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 20:38:56,447 INFO src.chain: Respuesta generada en 1.71s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md', 'runbook_incidentes.md'])
+2026-09-24 20:38:56,447 INFO src.chain: Recuperando contexto para la pregunta: '¿Cuál es la política de vacaciones del equipo de guardia?'
+2026-09-24 20:38:56,473 INFO src.chain: Recuperados 4 fragmento(s): ['normativa_despliegue.md (similitud=35.92%)', 'runbook_incidentes.md (similitud=24.92%)', 'normativa_despliegue.md (similitud=22.65%)', 'monitoreo_alertas.md (similitud=19.26%)']
+2026-09-24 20:38:57,314 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-09-24 20:38:57,317 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 20:38:57,318 INFO src.chain: Respuesta generada en 0.87s (contexto_encontrado=False, fuentes=[])
 === Módulo de ingesta ===
 
 === Preguntas con respuesta en el contexto ===
@@ -39,18 +40,62 @@ Pregunta: ¿Qué componente es el cuello de botella histórico del sistema bajo 
   "fuentes": [
     "arquitectura_sistema.md",
     "monitoreo_alertas.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
+      "similitud": 0.5426
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Stack de observabilidad",
+      "similitud": 0.2145
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Dashboards de referencia",
+      "similitud": 0.2003
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
+      "similitud": 0.1651
+    }
   ]
 }
 
 Pregunta: ¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?
 {
   "pregunta": "¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?",
-  "respuesta": "Según el runbook de incidentes, los pasos para resolver un agotamiento del pool de conexiones a PostgreSQL son:\n\n1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100).\n\n2. Si hay una query \"colgada\" reteniendo conexiones, identificarla con:\n   ```\n   SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;\n   ```\n   y, si corresponde, cancelarla con `pg_cancel_backend(pid)`.\n\n3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el número de réplicas de PgBouncer o subir el límite de conexiones.",
+  "respuesta": "Según el runbook de incidentes, los pasos para resolver un agotamiento del pool de conexiones a PostgreSQL son:\n\n1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100).\n\n2. Si hay una query \"colgada\" reteniendo conexiones, identificarla con:\n   ```\n   SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;\n   ```\n   y, si corresponde, cancelarla con `pg_cancel_backend(pid)`.\n\n3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el número de réplicas de PgBouncer o subir el límite de conexiones a 150.",
   "contexto_encontrado": true,
   "fuentes": [
     "arquitectura_sistema.md",
     "monitoreo_alertas.md",
     "runbook_incidentes.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.6701
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
+      "similitud": 0.5825
+    },
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
+      "similitud": 0.581
+    },
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Flujo de un pedido",
+      "similitud": 0.5237
+    }
   ]
 }
 
@@ -63,6 +108,28 @@ Pregunta: ¿Los viernes se puede desplegar a producción?
     "monitoreo_alertas.md",
     "normativa_despliegue.md",
     "runbook_incidentes.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "normativa_despliegue.md",
+      "seccion": "Normativa de despliegue — Plataforma de Pedidos > Proceso de despliegue a producción",
+      "similitud": 0.6464
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
+      "similitud": 0.2477
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > Celery",
+      "similitud": 0.2271
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 4: Condición de carrera en actualización de stock",
+      "similitud": 0.2035
+    }
   ]
 }
 
@@ -75,6 +142,28 @@ Pregunta: ¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?
     "arquitectura_sistema.md",
     "monitoreo_alertas.md",
     "runbook_incidentes.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
+      "similitud": 0.6655
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.6542
+    },
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
+      "similitud": 0.6221
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.5373
+    }
   ]
 }
 
@@ -85,5 +174,27 @@ Pregunta: ¿Cuál es la política de vacaciones del equipo de guardia?
   "pregunta": "¿Cuál es la política de vacaciones del equipo de guardia?",
   "respuesta": "No lo sé, no tengo información sobre eso en el contexto disponible.",
   "contexto_encontrado": false,
-  "fuentes": []
+  "fuentes": [],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "normativa_despliegue.md",
+      "seccion": "Normativa de despliegue — Plataforma de Pedidos > Capacitación y checklist de guardia",
+      "similitud": 0.3592
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos",
+      "similitud": 0.2492
+    },
+    {
+      "fuente": "normativa_despliegue.md",
+      "seccion": "Normativa de despliegue — Plataforma de Pedidos > Proceso de despliegue a producción",
+      "similitud": 0.2265
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
+      "similitud": 0.1926
+    }
+  ]
 }

@@ -1,24 +1,20 @@
 # Sistema de recuperación semántica local (RAG)
 
-Pre-entrega 3 · Módulo 3 — AI Engineering (Coderhouse). Sistema RAG end-to-end: ingesta de
-documentos en ChromaDB, recuperación semántica y generación de respuestas *grounded* (ancladas
-al contexto recuperado) vía LCEL (LangChain).
+Pre-entrega 3 · Módulo 3 — AI Engineering (Coderhouse).
 
-El "cerebro" documental (`rag/docs/`) son 4 manuales técnicos ficticios sobre una plataforma de
-pedidos (FastAPI + PostgreSQL + Redis + Celery) — el mismo sistema descripto en los ejemplos del
-[Módulo 2](https://github.com/pantonini2011/ai-engineering-2), para mantener continuidad entre
-entregas: arquitectura, runbook de incidentes, normativa de despliegue y monitoreo/alertas.
-
-**Entregable**: el script `rag/main.py` (se corre con `python -m rag.main`, ver
+**Entregable**: el script `src/main.py` (se corre con `python -m src.main`, ver
 [Guía de ejecución](#guía-de-ejecución)). La consigna original está en
 [`preentrega3.md`](preentrega3.md).
 
 ## Índice
 
+- [Descripción técnica](#descripción-técnica)
 - [Checklist de la consigna](#checklist-de-la-consigna)
+- [Decisiones de diseño](#decisiones-de-diseño)
 - [Guía de ejecución](#guía-de-ejecución)
+- [Ejemplo de entrada/salida](#ejemplo-de-entradasalida)
 - [Estructura](#estructura)
-- [Diseño](#diseño)
+- [Diseño en detalle](#diseño)
   - [Qué es "local" acá, y qué no](#qué-es-local-acá-y-qué-no)
   - [Embeddings locales (Hugging Face)](#embeddings-locales-hugging-face)
 - [Arquitectura interna](#arquitectura-interna)
@@ -28,40 +24,80 @@ entregas: arquitectura, runbook de incidentes, normativa de despliegue y monitor
 - [Errores comunes evitados (según la consigna)](#errores-comunes-evitados-según-la-consigna)
 - [Tests](#tests)
 
+## Descripción técnica
+
+Sistema de **recuperación semántica local (RAG)** que responde preguntas sobre un conjunto de
+manuales técnicos usando **solo** la información de esos manuales. Si la respuesta no está en
+ellos, dice "No lo sé" en vez de inventarla.
+
+El flujo end-to-end tiene tres etapas:
+
+1. **Ingesta** (`src/ingest.py`): lee los `.md`/`.txt` de `data/`, los fragmenta, calcula un
+   embedding por fragmento con un modelo local de Hugging Face y los persiste en una base
+   vectorial **ChromaDB local** (`./vectorstore`). Si la base ya existe, no re-indexa.
+2. **Recuperación** (`src/chain.py`): convierte la pregunta en embedding con el mismo modelo y
+   trae de ChromaDB los 4 fragmentos más parecidos por similitud coseno.
+3. **Generación grounded** (`src/chain.py`): una cadena LCEL
+   (`prompt | LLM | PydanticOutputParser`) redacta la respuesta usando solo esos fragmentos y la
+   devuelve como JSON validado, con las fuentes y los scores de similitud.
+
+El "cerebro" documental (`data/`) son 4 manuales técnicos ficticios sobre una plataforma de
+pedidos (FastAPI + PostgreSQL + Redis + Celery) — el mismo sistema descripto en los ejemplos del
+[Módulo 2](https://github.com/pantonini2011/ai-engineering-2), para mantener continuidad entre
+entregas: arquitectura, runbook de incidentes, normativa de despliegue y monitoreo/alertas.
+
 ## Checklist de la consigna
 
 Cada requisito de [`preentrega3.md`](preentrega3.md), dónde está implementado y con qué se
-verifica. Los logs de [`evidencia/`](evidencia/) son salidas reales de `python -m rag.main` y
+verifica. Los logs de [`evidencia/`](evidencia/) son salidas reales de `python -m src.main` y
 `pytest`, sin editar (ver [`evidencia/README.md`](evidencia/README.md)).
 
 ### Componentes a entregar
 
 | Requisito | Implementación | Evidencia verificable |
 |---|---|---|
-| Script/notebook con flujo RAG end-to-end | [`rag/main.py`](rag/main.py) → `main()`: ingesta, 4 preguntas con contexto y 1 sin contexto | [`evidencia/corrida_1_indexacion.txt`](evidencia/corrida_1_indexacion.txt) |
-| **Módulo de ingesta**: toma documentos `.txt`/`.md`, los fragmenta y los persiste en ChromaDB | [`rag/ingest.py`](rag/ingest.py) → `ingest_documentos()` (usa `_cargar_documentos()` y `_fragmentar_documento()`) | Log: `Indexando 24 fragmentos de 4 documento(s) en la colección 'manuales_tecnicos'` · tests `test_ingesta_indexa_y_persiste`, `test_ingesta_ignora_archivos_no_txt_md` |
-| **Retriever**: convierte la pregunta en embedding y trae los fragmentos más relevantes | [`rag/chain.py`](rag/chain.py) → `answer_question()`: `vectorstore.asimilarity_search_with_score(pregunta, k=TOP_K)` | Log: `Recuperados 4 fragmento(s): ['arquitectura_sistema.md (similitud=54.26%)', ...]` |
-| **Generación grounded** con una cadena LCEL | [`rag/chain.py`](rag/chain.py) → `build_chain()`: `PROMPT \| llm \| RunnableLambda(_validar_salida)` + `.with_retry()` | Respuestas JSON en la corrida 1 · tests `TestBuildChain` en [`rag/tests/test_chain.py`](rag/tests/test_chain.py) |
-| El prompt instruye a decir **"No lo sé"** si la respuesta no está en el contexto | [`rag/chain.py`](rag/chain.py) → `PROMPT`; frase fija `NO_CONTEXTO_MENSAJE` en [`rag/schemas.py`](rag/schemas.py) | Pregunta sobre vacaciones → `"No lo sé, no tengo información sobre eso en el contexto disponible."`, `contexto_encontrado: false` · test `test_normaliza_respuesta_cuando_no_hay_contexto` |
+| Script/notebook con flujo RAG end-to-end | [`src/main.py`](src/main.py) → `main()`: ingesta, 4 preguntas con contexto y 1 sin contexto | [`evidencia/corrida_1_indexacion.txt`](evidencia/corrida_1_indexacion.txt) |
+| **Módulo de ingesta**: toma documentos `.txt`/`.md`, los fragmenta y los persiste en ChromaDB | [`src/ingest.py`](src/ingest.py) → `ingest_documentos()` (usa `_cargar_documentos()` y `_fragmentar_documento()`) | Log: `Indexando 24 fragmentos de 4 documento(s) en la colección 'manuales_tecnicos_dev'` · tests `test_ingesta_indexa_y_persiste`, `test_ingesta_ignora_archivos_no_txt_md` |
+| **Retriever**: convierte la pregunta en embedding y trae los fragmentos más relevantes | [`src/chain.py`](src/chain.py) → `answer_question()`: `vectorstore.asimilarity_search_with_score(pregunta, k=TOP_K)` | Log: `Recuperados 4 fragmento(s): ['arquitectura_sistema.md (similitud=54.26%)', ...]` |
+| **Generación grounded** con una cadena LCEL | [`src/chain.py`](src/chain.py) → `build_chain()`: `PROMPT \| llm \| RunnableLambda(_validar_salida)` + `.with_retry()` | Respuestas JSON en la corrida 1 · tests `TestBuildChain` en [`tests/test_chain.py`](tests/test_chain.py) |
+| El prompt instruye a decir **"No lo sé"** si la respuesta no está en el contexto | [`src/chain.py`](src/chain.py) → `PROMPT`; frase fija `NO_CONTEXTO_MENSAJE` en [`src/schemas.py`](src/schemas.py) | Pregunta sobre vacaciones → `"No lo sé, no tengo información sobre eso en el contexto disponible."`, `contexto_encontrado: false` · test `test_normaliza_respuesta_cuando_no_hay_contexto` |
 
 ### Pasos sugeridos
 
 | Paso | Implementación | Evidencia verificable |
 |---|---|---|
-| 3 o 4 archivos de texto sobre un tema específico | 4 manuales `.md` en [`rag/docs/`](rag/docs/) | Log: `... de 4 documento(s)` |
-| Fragmentar con `RecursiveCharacterTextSplitter` | [`rag/ingest.py`](rag/ingest.py) → `_fragmentar_documento()`: `RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)`, aplicado dentro de cada sección Markdown (ver [por qué](#módulo-de-ingesta-ingestpy)) | Tests `TestFragmentarDocumento` en [`rag/tests/test_ingest.py`](rag/tests/test_ingest.py) |
-| Cliente ChromaDB persistente en una carpeta local (`./vectorstore`) | [`rag/ingest.py`](rag/ingest.py) → `PERSIST_DIRECTORY = <raíz>/vectorstore`, colección `manuales_tecnicos` | Log: `... (D:\...\vectorstore)`; la carpeta queda creada tras correr |
-| Mismo modelo de embeddings para indexar y consultar | [`rag/ingest.py`](rag/ingest.py) → `_build_embeddings()`, única función que crea embeddings en el proyecto | Las similitudes de la corrida 2 (base ya persistida) son idénticas a las de la corrida 1 |
-| Prompt de sistema como "filtro de veracidad" | [`rag/chain.py`](rag/chain.py) → `PROMPT`: "responde EXCLUSIVAMENTE en base al CONTEXTO..." | Ver texto completo del prompt en el código |
-| Salida por un `PydanticOutputParser` | [`rag/chain.py`](rag/chain.py) → `parser = PydanticOutputParser(pydantic_object=RespuestaLLM)`, usado en `_validar_salida()` | Tests `test_acepta_salida_completa`, `test_rechaza_json_invalido` |
+| 3 o 4 archivos de texto sobre un tema específico | 4 manuales `.md` en [`data/`](data/) | Log: `... de 4 documento(s)` |
+| Fragmentar con `RecursiveCharacterTextSplitter` | [`src/ingest.py`](src/ingest.py) → `_fragmentar_documento()`: `RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)`, aplicado dentro de cada sección Markdown (ver [por qué](#módulo-de-ingesta-ingestpy)) | Tests `TestFragmentarDocumento` en [`tests/test_ingest.py`](tests/test_ingest.py) |
+| Cliente ChromaDB persistente en una carpeta local (`./vectorstore`) | [`src/ingest.py`](src/ingest.py) → `PERSIST_DIRECTORY = <raíz>/vectorstore`, colección `manuales_tecnicos_<RAG_ENV>` (`manuales_tecnicos_dev` por default) | Log: `... (D:\...\vectorstore)`; la carpeta queda creada tras correr |
+| Mismo modelo de embeddings para indexar y consultar | [`src/ingest.py`](src/ingest.py) → `_build_embeddings()`, única función que crea embeddings en el proyecto | Las similitudes de la corrida 2 (base ya persistida) son idénticas a las de la corrida 1 |
+| Prompt de sistema como "filtro de veracidad" | [`src/chain.py`](src/chain.py) → `PROMPT`: "responde EXCLUSIVAMENTE en base al CONTEXTO..." | Ver texto completo del prompt en el código |
+| Salida por un `PydanticOutputParser` | [`src/chain.py`](src/chain.py) → `parser = PydanticOutputParser(pydantic_object=RespuestaLLM)`, usado en `_validar_salida()` | Tests `test_acepta_salida_completa`, `test_rechaza_json_invalido` |
 
 ### Errores comunes a evitar
 
 | Error | Cómo se evita | Evidencia verificable |
 |---|---|---|
-| Contexto infinito | `TOP_K = 4` en [`rag/chain.py`](rag/chain.py) (rango 3-5) | Log: cada pregunta recupera exactamente `4 fragmento(s)` |
+| Contexto infinito | `TOP_K = 4` en [`src/chain.py`](src/chain.py) (rango 3-5) | Log: cada pregunta recupera exactamente `4 fragmento(s)` |
 | Embeddings no coincidentes | Un solo `_build_embeddings()` para ingesta y consulta | Corrida 2: mismo ranking y mismas similitudes que la corrida 1 |
-| Falta de persistencia (re-indexar siempre) | `_coleccion_ya_poblada()` en [`rag/ingest.py`](rag/ingest.py): si la colección ya tiene documentos, no re-indexa | [`evidencia/corrida_2_persistencia.txt`](evidencia/corrida_2_persistencia.txt): `Colección 'manuales_tecnicos' ya poblada ... se omite la re-indexación.` · test `test_ingesta_no_reindexa_si_ya_esta_poblada` |
+| Falta de persistencia (re-indexar siempre) | `_coleccion_ya_poblada()` en [`src/ingest.py`](src/ingest.py): si la colección ya tiene documentos, no re-indexa | [`evidencia/corrida_2_persistencia.txt`](evidencia/corrida_2_persistencia.txt): `Colección 'manuales_tecnicos_dev' ya poblada ... se omite la re-indexación.` · test `test_ingesta_no_reindexa_si_ya_esta_poblada` |
+
+## Decisiones de diseño
+
+Resumen de las decisiones técnicas. El detalle y los hallazgos que las motivaron están en
+[Diseño en detalle](#diseño) y [Arquitectura interna](#arquitectura-interna).
+
+| Decisión | Elección | Justificación |
+|---|---|---|
+| **Base vectorial** | ChromaDB en modo persistente local (`./vectorstore`) | La consigna pide un sistema local. No requiere servidor ni cuenta: la colección vive en disco y sobrevive entre corridas. |
+| **Modelo de embeddings** | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` vía `HuggingFaceEmbeddings` | Corre 100% local, sin API key. Es **multilingüe**: los documentos y las preguntas están en español, y un modelo entrenado casi solo en inglés (ej. `all-MiniLM-L6-v2`) mide peor la similitud ante sinónimos en español. |
+| **Dimensión del embedding** | **384** | Es la dimensión de salida del modelo elegido. Se mide sobre un vector real y se loguea al arrancar: `Modelo de embeddings: ... (dimensión 384)`. Como referencia, `text-embedding-3-small` de OpenAI usa 1536: 384 alcanza para un corpus chico y hace la indexación rápida en CPU. |
+| **Métrica de similitud** | Coseno, fijada explícitamente con `collection_metadata={"hnsw:space": "cosine"}` | En embeddings de texto importa la **dirección** del vector (el tema), no su magnitud (el largo del texto); el coseno mide justamente eso. Además, sin especificarla Chroma usa L2² por default. Con coseno explícito, el score que devuelve Chroma es `1 - similitud_coseno`, que se puede leer directamente como similitud (`1 - distancia`). Los vectores se normalizan (`normalize_embeddings=True`), que es lo que este modelo espera. |
+| **Chunking** | `MarkdownHeaderTextSplitter` (por `#`/`##`/`###`) + `RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)` como fallback dentro de secciones largas | Mantiene cada sección del manual (ej. un incidente completo, con síntoma, causa y resolución) en un solo fragmento. El splitter plano original cortaba secciones por la mitad y hacía perder datos puntuales (ver [Hallazgo](#hallazgo-un-top_k-correcto-no-garantiza-traer-el-fragmento-correcto)). Resultado: 24 fragmentos para 4 documentos. |
+| **Metadatos por fragmento** | `source` (archivo) + `Header 1`/`Header 2`/`Header 3` (sección) | Las `fuentes` y la `seccion` de cada fragmento en la salida se calculan desde la metadata, en código, sin depender de que el LLM las recuerde. |
+| **Segmentación por entorno (dev/prod)** | Una colección por entorno: `manuales_tecnicos_<RAG_ENV>`, con `RAG_ENV=dev` por default | Chroma no tiene *namespaces* como Pinecone; el equivalente es una colección separada dentro del mismo `./vectorstore`. Así una re-indexación de prueba en `dev` no pisa los vectores que consulta `prod`. Test: `test_colecciones_por_entorno_no_se_pisan`. |
+| **`top_k`** | 4 | Dentro del rango 3-5 de la consigna: suficiente contexto sin caer en "contexto infinito" (*lost in the middle*, tokens de más). |
+| **LLM de generación** | Claude (`claude-haiku-4-5-20251001`) por default; OpenAI u Ollama intercambiables con `provider=` | "Local" en la consigna describe a la base vectorial, no al LLM (ver [Qué es "local" acá](#qué-es-local-acá-y-qué-no)). |
+| **Salida estructurada** | `PydanticOutputParser(RespuestaLLM)` + reintento automático si la salida llega truncada o mal formada | Lo pide la consigna; el reintento evita que una respuesta cortada llegue como válida. |
 
 ## Guía de ejecución
 
@@ -96,7 +132,9 @@ verifica. Los logs de [`evidencia/`](evidencia/) son salidas reales de `python -
    pip install -r requirements.txt
    ```
 
-4. **Configurar credenciales**: copiar `.env.example` a `.env` y completar `ANTHROPIC_API_KEY`.
+4. **Configurar variables de entorno**: copiar `.env.example` a `.env` y completar
+   `ANTHROPIC_API_KEY` (la única obligatoria). Opcional: `RAG_ENV=dev|prod` elige la colección
+   de ChromaDB (ver [Decisiones de diseño](#decisiones-de-diseño)).
 
    ```bash
    copy .env.example .env           # Linux/Mac: cp .env.example .env
@@ -105,52 +143,161 @@ verifica. Los logs de [`evidencia/`](evidencia/) son salidas reales de `python -
 5. **Correr el flujo RAG end-to-end**
 
    ```bash
-   python -m rag.main
+   python -m src.main
    ```
 
    Qué hace:
-   - Si `./vectorstore` no existe, fragmenta los 4 documentos de `rag/docs/` y los persiste en
+   - Si `./vectorstore` no existe, fragmenta los 4 documentos de `data/` y los persiste en
      ChromaDB. Log esperado: `Indexando 24 fragmentos de 4 documento(s) ...` y
      `Indexación completa: 24 fragmentos persistidos.`
    - Hace 5 preguntas: 4 con respuesta en los documentos y 1 deliberadamente fuera de ellos.
      Cada respuesta se imprime como JSON (`pregunta`, `respuesta`, `contexto_encontrado`,
      `fuentes`). La última tiene que ser `"No lo sé, no tengo información sobre eso en el
      contexto disponible."` con `contexto_encontrado: false`.
-   - El log también queda guardado en `rag/rag.log`.
+   - El log también queda guardado en `rag.log`.
 
    Salida completa de referencia: [`evidencia/corrida_1_indexacion.txt`](evidencia/corrida_1_indexacion.txt).
 
-6. **Verificar la persistencia**: correr `python -m rag.main` una segunda vez. Ahora el log
-   tiene que decir `Colección 'manuales_tecnicos' ya poblada en ...: se omite la re-indexación.`
+6. **Verificar la persistencia**: correr `python -m src.main` una segunda vez. Ahora el log
+   tiene que decir `Colección 'manuales_tecnicos_dev' ya poblada en ...: se omite la re-indexación.`
    Referencia: [`evidencia/corrida_2_persistencia.txt`](evidencia/corrida_2_persistencia.txt).
 
 7. **Correr los tests** (no necesitan API key ni red: embeddings y LLM están mockeados)
 
    ```bash
-   pytest rag/tests/ -v
+   pytest -v
    ```
 
-   Resultado esperado: `37 passed`. Referencia: [`evidencia/tests_pytest.txt`](evidencia/tests_pytest.txt).
+   Resultado esperado: `39 passed`. Referencia: [`evidencia/tests_pytest.txt`](evidencia/tests_pytest.txt).
 
 Para re-indexar desde cero (por ejemplo, después de cambiar `EMBEDDING_MODEL` en `.env`),
 borrar la carpeta `vectorstore/` y volver a correr el paso 5.
 
+## Ejemplo de entrada/salida
+
+`python -m src.main` hace 5 preguntas fijas (definidas en `src/main.py`) y por cada una imprime
+un JSON `RespuestaRAG`:
+
+- `respuesta` y `contexto_encontrado` los decide el LLM.
+- `fuentes` y `fragmentos_recuperados` se calculan en código a partir de lo que devolvió
+  ChromaDB. Cada fragmento trae su metadata (`fuente`, `seccion`) y su score (`similitud` =
+  `1 - distancia coseno`, donde 1.0 es idéntico).
+
+Copiado sin editar de [`evidencia/corrida_1_indexacion.txt`](evidencia/corrida_1_indexacion.txt).
+
+**Entrada** (pregunta con respuesta en los documentos):
+
+```
+¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?
+```
+
+**Salida:**
+
+```json
+{
+  "pregunta": "¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?",
+  "respuesta": "Según el runbook de incidentes, los pasos para resolver un agotamiento del pool de conexiones a PostgreSQL son:\n\n1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100).\n\n2. Si hay una query \"colgada\" reteniendo conexiones, identificarla con:\n   ```\n   SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;\n   ```\n   y, si corresponde, cancelarla con `pg_cancel_backend(pid)`.\n\n3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el número de réplicas de PgBouncer o subir el límite de conexiones a 150.",
+  "contexto_encontrado": true,
+  "fuentes": [
+    "arquitectura_sistema.md",
+    "monitoreo_alertas.md",
+    "runbook_incidentes.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.6701
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
+      "similitud": 0.5825
+    },
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
+      "similitud": 0.581
+    },
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Flujo de un pedido",
+      "similitud": 0.5237
+    }
+  ]
+}
+```
+
+**Entrada** (pregunta deliberadamente fuera de los documentos):
+
+```
+¿Cuál es la política de vacaciones del equipo de guardia?
+```
+
+**Salida:** el retriever igual trae 4 fragmentos, pero con similitud baja (máximo 0.3592)
+y ninguno contiene el dato. El modelo responde la frase canónica de "No lo sé" y `fuentes`
+queda vacía:
+
+```json
+{
+  "pregunta": "¿Cuál es la política de vacaciones del equipo de guardia?",
+  "respuesta": "No lo sé, no tengo información sobre eso en el contexto disponible.",
+  "contexto_encontrado": false,
+  "fuentes": [],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "normativa_despliegue.md",
+      "seccion": "Normativa de despliegue — Plataforma de Pedidos > Capacitación y checklist de guardia",
+      "similitud": 0.3592
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos",
+      "similitud": 0.2492
+    },
+    {
+      "fuente": "normativa_despliegue.md",
+      "seccion": "Normativa de despliegue — Plataforma de Pedidos > Proceso de despliegue a producción",
+      "similitud": 0.2265
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
+      "similitud": 0.1926
+    }
+  ]
+}
+```
+
+Log de la misma corrida (modelo y dimensión, indexación y scores de la primera pregunta):
+
+```
+INFO src.ingest: Modelo de embeddings: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 (dimensión 384)
+INFO src.ingest: Indexando 24 fragmentos de 4 documento(s) en la colección 'manuales_tecnicos_dev' (...\vectorstore)...
+INFO src.chain: Recuperados 4 fragmento(s): ['runbook_incidentes.md (similitud=67.01%)', 'monitoreo_alertas.md (similitud=58.25%)', 'arquitectura_sistema.md (similitud=58.10%)', 'arquitectura_sistema.md (similitud=52.37%)']
+```
+
 ## Estructura
 
 ```
-rag/
-├── docs/          # El "cerebro": 4 manuales técnicos (.md) sobre la plataforma de pedidos
-├── schemas.py     # RespuestaLLM (lo que decide el modelo) y RespuestaRAG (contrato final)
-├── ingest.py      # Módulo de ingesta: chunking + persistencia en ChromaDB
+src/               # Código fuente
+├── ingest.py      # Módulo de ingesta: embeddings, chunking y persistencia en ChromaDB
 ├── chain.py       # Retriever + cadena LCEL (PROMPT | llm | PydanticOutputParser)
-├── main.py        # Script entregable: preguntas con y sin respuesta en el contexto
-└── tests/         # Suite de tests con pytest (embeddings/LLM mockeados, sin red)
-evidencia/         # Salidas reales de `python -m rag.main` (2 corridas) y de `pytest -v`
+├── schemas.py     # RespuestaLLM (lo que decide el modelo), RespuestaRAG y FragmentoRecuperado (salida final)
+└── main.py        # Script entregable: ingesta + preguntas con y sin respuesta en el contexto
+data/              # El "cerebro": 4 manuales técnicos (.md) usados para la ingesta
+tests/             # Suite de pytest (embeddings/LLM mockeados, sin red ni API keys)
+evidencia/         # Salidas reales de `python -m src.main` (2 corridas) y de `pytest -v`
 preentrega3.md     # Consigna
-.env.example       # Plantilla de configuración (API keys, modelos)
-requirements.txt   # Dependencias
+.env.example       # Plantilla de variables de entorno (sin valores reales)
+.gitignore         # Ignora .env, .venv/, __pycache__/, vectorstore/, logs
+requirements.txt   # Dependencias con versiones fijadas
+pytest.ini         # Configuración de pytest
 vectorstore/       # Colección persistida de ChromaDB (se genera al correr, gitignored)
 ```
+
+No hay configuración oculta: todo lo que el código lee del entorno está listado en
+[`.env.example`](.env.example), y lo único obligatorio es `ANTHROPIC_API_KEY`.
 
 ## Diseño
 
@@ -168,7 +315,7 @@ requisito de la consigna.
 
 ### Embeddings locales (Hugging Face)
 
-`rag/ingest.py::_build_embeddings()` usa **`HuggingFaceEmbeddings`** con el modelo
+`src/ingest.py::_build_embeddings()` usa **`HuggingFaceEmbeddings`** con el modelo
 `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`: corre 100% local (se descarga una
 vez desde el Hub y queda cacheado en disco, sin API key ni servidor externo corriendo). Ninguno
 de los proveedores de generación configurados (Anthropic, OpenAI) ofrece un modelo de embeddings
@@ -176,7 +323,7 @@ propio sin sumar una API extra (ej. Voyage AI) sólo para eso — `sentence-tran
 dependencia adicional.
 
 Se eligió la variante **multilingüe** en vez de `all-MiniLM-L6-v2` (entrenado casi
-exclusivamente en inglés) porque todo el corpus documental (`rag/docs/`) y las preguntas de
+exclusivamente en inglés) porque todo el corpus documental (`data/`) y las preguntas de
 prueba están en español — un modelo solo-inglés degrada la similitud coseno ante sinonimia o
 lenguaje coloquial en español.
 
@@ -206,7 +353,7 @@ ocurra, porque solo hay una función que construye embeddings en todo el proyect
 
 `ingest_documentos()`:
 
-1. Carga todos los `.txt`/`.md` de `rag/docs/` como `Document` de LangChain, con
+1. Carga todos los `.txt`/`.md` de `data/` como `Document` de LangChain, con
    `metadata={"source": <nombre de archivo>}` — esa metadata es la que después permite reportar
    `fuentes` reales sin depender de que el LLM las recuerde (ver más abajo).
 2. Los fragmenta con un **splitter jerárquico** (`_fragmentar_documento()`): primero
@@ -214,7 +361,7 @@ ocurra, porque solo hay una función que construye embeddings en todo el proyect
    sigan superando `chunk_size=1000` caracteres, `RecursiveCharacterTextSplitter` como *fallback*
    dentro de esa sección puntual (`chunk_overlap=150`).
 3. Persiste los fragmentos + sus embeddings en una colección de ChromaDB (`./vectorstore`,
-   colección `manuales_tecnicos`), creada con `collection_metadata={"hnsw:space": "cosine"}`.
+   colección `manuales_tecnicos_<RAG_ENV>` (`manuales_tecnicos_dev` por default)), creada con `collection_metadata={"hnsw:space": "cosine"}`.
 
 **Por qué jerárquico y no un splitter plano**: el splitter plano original (una sola pasada de
 `RecursiveCharacterTextSplitter` sobre el documento completo) cortaba por cantidad de caracteres,
@@ -243,10 +390,10 @@ devuelve directamente el `Chroma` existente sin volver a fragmentar ni re-embedd
 `force_reindex=True`) — evidencia en el log de una corrida real, segunda vez que se llama:
 
 ```
-INFO rag.ingest: Colección 'manuales_tecnicos' ya poblada en D:\...\vectorstore: se omite la re-indexación.
+INFO src.ingest: Colección 'manuales_tecnicos_dev' ya poblada en D:\...\vectorstore: se omite la re-indexación.
 ```
 
-**Una sola conexión a Chroma por corrida, no una por pregunta**: `rag/main.py` llama a
+**Una sola conexión a Chroma por corrida, no una por pregunta**: `src/main.py` llama a
 `ingest_documentos()` una única vez al principio y pasa el `Chroma` devuelto explícitamente a cada
 `answer_question(..., vectorstore=vectorstore)`. Sin esto, cada pregunta reabriría su propia
 conexión al `chroma.sqlite3` persistido (`answer_question` hace `vectorstore or
@@ -307,7 +454,7 @@ cadena_generacion = pipeline.with_retry(
   credenciales inválidas, proveedor caído) — ese tipo de error se propaga directo, en el primer
   intento.
 - **La frase canónica de "No lo sé" se garantiza en código, no solo en el prompt**: el prompt le
-  pide al modelo responder "literalmente" `NO_CONTEXTO_MENSAJE` (constante en `rag/schemas.py`)
+  pide al modelo responder "literalmente" `NO_CONTEXTO_MENSAJE` (constante en `src/schemas.py`)
   cuando no hay contexto suficiente, pero un LLM no siempre respeta esa instrucción al pie de la
   letra — se observó a Claude, en una corrida real, agregando una explicación extra después de un
   `\n\n` en vez de responder solo la frase pedida. `RespuestaLLM` tiene un `model_validator` que
@@ -333,7 +480,7 @@ cadena_generacion = pipeline.with_retry(
   [Módulo de ingesta](#módulo-de-ingesta-ingestpy) y
   [Evidencia real de ejecución](#evidencia-real-de-ejecución)) -- se dejó como herramienta de
   diagnóstico permanente, no como algo puntual. Para verlo, subí el nivel del logger a `DEBUG` en
-  `rag/main.py` (o el que corresponda).
+  `src/main.py` (o el que corresponda).
 
 `answer_question()` es el punto de entrada end-to-end:
 
@@ -352,9 +499,12 @@ cadena_generacion = pipeline.with_retry(
 
 ## Evidencia real de ejecución
 
-Corrida real (`python -m rag.main`, embeddings
+Corrida real (`python -m src.main`, embeddings
 `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` local, generación
-`provider="anthropic"`):
+`provider="anthropic"`). Los JSON de esta sección son de corridas anteriores a que la salida
+incluyera `fragmentos_recuperados`; se dejan como registro de cómo evolucionó el sistema. La
+salida actual completa está en [Ejemplo de entrada/salida](#ejemplo-de-entradasalida) y en
+[`evidencia/`](evidencia/).
 
 **Pregunta con respuesta clara en el contexto:**
 
@@ -476,10 +626,10 @@ ciego al contenido.
 ## Tests
 
 ```bash
-pytest rag/tests/ -v
+pytest -v
 ```
 
-37 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
+39 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
 
 - `test_schemas.py`: validación de `RespuestaLLM` (respuesta no vacía, limpieza de espacios,
   campos requeridos, tipos, normalización de `respuesta` a `NO_CONTEXTO_MENSAJE` cuando
@@ -488,7 +638,8 @@ pytest rag/tests/ -v
 - `test_ingest.py`: usa un `FakeEmbeddings` determinístico (mismo texto → mismo vector, sin red)
   inyectado vía monkeypatch de `_build_embeddings`, con ChromaDB real apuntando a un directorio
   temporal. Cubre indexación real, filtrado de archivos no `.txt`/`.md`, no-reindexación si la
-  colección ya está poblada, `force_reindex=True`, y error si el directorio de documentos está
+  colección ya está poblada, `force_reindex=True`, colecciones `dev`/`prod` independientes
+  dentro del mismo directorio, y error si el directorio de documentos está
   vacío. `TestFragmentarDocumento` prueba el splitter jerárquico en aislamiento: una sección corta
   mantiene junto su encabezado y contenido, una sección larga activa el fallback de
   `RecursiveCharacterTextSplitter` sin mezclar la sección vecina, y un texto sin encabezados
@@ -505,9 +656,10 @@ pytest rag/tests/ -v
   `retry_if_exception_type` lo acota a `RespuestaIncompletaError`. `answer_question()` se prueba
   con un `FakeVectorstore`/`FakeRetriever` y una `FakeChain`, verificando que las `fuentes` se
   calculan a partir de los documentos recuperados (deduplicadas y ordenadas) y quedan vacías
-  cuando `contexto_encontrado=False`. También cubre que una falla durante el retrieval (ej.
+  cuando `contexto_encontrado=False`, y que `fragmentos_recuperados` expone fuente, sección y
+  similitud (`1 - distancia`) de cada fragmento. También cubre que una falla durante el retrieval (ej.
   ChromaDB caído) se loguea con el mensaje "Fallo recuperando contexto..." y se propaga, en vez
   de tragarse en silencio.
 
-La fixture `fast_retries` (en `rag/tests/conftest.py`) parchea `asyncio.sleep` para neutralizar
+La fixture `fast_retries` (en `tests/conftest.py`) parchea `asyncio.sleep` para neutralizar
 el backoff real de `.with_retry()` durante los tests, mismo criterio que el Módulo 2.

@@ -16,8 +16,8 @@ from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
-from rag.ingest import ingest_documentos
-from rag.schemas import NO_CONTEXTO_MENSAJE, RespuestaLLM, RespuestaRAG
+from src.ingest import ingest_documentos
+from src.schemas import NO_CONTEXTO_MENSAJE, FragmentoRecuperado, RespuestaLLM, RespuestaRAG
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ def _validar_salida(mensaje: BaseMessage) -> RespuestaLLM:
 def _build_model(provider: str = "anthropic", model: Optional[str] = None) -> BaseChatModel:
     """Mismo criterio de proveedor intercambiable de los Módulos 1 y 2. Default
     `"anthropic"` (Claude): "local" en esta consigna describe a la base
-    vectorial (ChromaDB persistida en disco, ver `rag/ingest.py`), no al LLM
+    vectorial (ChromaDB persistida en disco, ver `src/ingest.py`), no al LLM
     de generación -- que perfectamente puede (y en este caso, por default,
     sí) ser un modelo hosteado."""
     provider = provider.lower()
@@ -139,6 +139,14 @@ def _format_docs(docs: List[Document]) -> str:
     if not docs:
         return "(no se recuperó ningún fragmento relevante para esta pregunta)"
     return "\n\n".join(f"[Fuente: {d.metadata.get('source', 'desconocida')}]\n{d.page_content}" for d in docs)
+
+
+def _seccion(doc: Document) -> Optional[str]:
+    """Arma la ruta de encabezados del fragmento ('Header 1 > Header 2 > ...')
+    a partir de la metadata que agrega MarkdownHeaderTextSplitter en la
+    ingesta. None si el documento no tenía encabezados (ej. un .txt plano)."""
+    encabezados = [doc.metadata[h] for h in ("Header 1", "Header 2", "Header 3") if doc.metadata.get(h)]
+    return " > ".join(encabezados) or None
 
 
 def build_chain(provider: str = "anthropic", model: Optional[str] = None) -> Runnable:
@@ -175,13 +183,13 @@ async def answer_question(
     y devuelve un `RespuestaRAG` validado.
 
     1. **Retrieval**: convierte la pregunta en embedding (mismo modelo que se
-       usó para indexar, ver `rag.ingest._build_embeddings`) y recupera los
+       usó para indexar, ver `src.ingest._build_embeddings`) y recupera los
        `top_k` fragmentos más relevantes de ChromaDB.
     2. **Generación grounded**: corre `build_chain()` con esos fragmentos como
        contexto.
     3. Las `fuentes` finales se calculan en código a partir de los documentos
        que el retriever efectivamente trajo -- no las decide el LLM (ver
-       `RespuestaLLM` en `rag/schemas.py`) -- y quedan vacías si el modelo no
+       `RespuestaLLM` en `src/schemas.py`) -- y quedan vacías si el modelo no
        encontró la respuesta en el contexto, aunque el retriever haya traído
        fragmentos (poco relevantes) igual.
     """
@@ -192,7 +200,7 @@ async def answer_question(
         # similarity_search_with_score() en vez de as_retriever().ainvoke():
         # el retriever descarta el score, y acá lo necesitamos para loguearlo.
         # Chroma devuelve DISTANCIA (0.0 = más parecido; con la colección
-        # configurada a "cosine", ver rag/ingest.py, es 1 - similitud_coseno).
+        # configurada a "cosine", ver src/ingest.py, es 1 - similitud_coseno).
         # Se muestra como SIMILITUD (1 - distancia; 1.0/100% = más parecido),
         # más intuitivo para leer en el log.
         docs_con_distancia = await vectorstore.asimilarity_search_with_score(pregunta, k=top_k)
@@ -226,11 +234,20 @@ async def answer_question(
         raise
 
     fuentes = sorted({d.metadata["source"] for d in docs}) if resultado_llm.contexto_encontrado else []
+    fragmentos = [
+        FragmentoRecuperado(
+            fuente=d.metadata.get("source", "desconocida"),
+            seccion=_seccion(d),
+            similitud=round(1 - distancia, 4),
+        )
+        for d, distancia in docs_con_distancia
+    ]
     respuesta = RespuestaRAG(
         pregunta=pregunta,
         respuesta=resultado_llm.respuesta,
         contexto_encontrado=resultado_llm.contexto_encontrado,
         fuentes=fuentes,
+        fragmentos_recuperados=fragmentos,
     )
     duracion = time.perf_counter() - inicio
     logger.info(

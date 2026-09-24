@@ -1,16 +1,16 @@
 import asyncio
 import logging
 
-from rag.chain import answer_question
-from rag.ingest import ingest_documentos
+from src.chain import answer_question
+from src.ingest import ingest_documentos
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("rag/rag.log", encoding="utf-8")],
+    handlers=[logging.StreamHandler(), logging.FileHandler("rag.log", encoding="utf-8")],
 )
 
-# Preguntas dentro del "cerebro" (rag/docs/*.md), sobre distintos documentos.
+# Preguntas dentro del "cerebro" (data/*.md), sobre distintos documentos.
 PREGUNTAS_CON_CONTEXTO = [
     "¿Qué componente es el cuello de botella histórico del sistema bajo carga alta, y por qué?",
     "¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?",

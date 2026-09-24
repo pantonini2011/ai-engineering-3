@@ -5,7 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 vectorstore/
-rag/rag.log
+rag.log
 my_local_db/
 .ipynb_checkpoints/
 

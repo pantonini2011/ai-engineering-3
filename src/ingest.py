@@ -14,9 +14,14 @@ from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharac
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-DOCS_DIR = Path(__file__).parent / "docs"
+DOCS_DIR = Path(__file__).parent.parent / "data"
 PERSIST_DIRECTORY = str(Path(__file__).parent.parent / "vectorstore")
-COLLECTION_NAME = "manuales_tecnicos"
+# Segmentación por entorno: Chroma no tiene "namespaces" como Pinecone, el
+# equivalente es una colección por entorno dentro del mismo persist_directory
+# (manuales_tecnicos_dev, manuales_tecnicos_prod). Así una re-indexación de
+# prueba en dev no pisa los vectores que consulta prod.
+RAG_ENV = os.getenv("RAG_ENV", "dev")
+COLLECTION_NAME = f"manuales_tecnicos_{RAG_ENV}"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 # Chroma usa L2 al cuadrado por default (no coseno) si no se especifica. Como
@@ -38,7 +43,7 @@ HEADERS_A_DIVIDIR = [("#", "Header 1"), ("##", "Header 2"), ("###", "Header 3")]
 @lru_cache(maxsize=1)
 def _build_embeddings() -> Embeddings:
     """Único punto de construcción del modelo de embeddings. Tanto `ingest_documentos`
-    (indexación) como `rag.chain` (consulta) importan esta misma función -- así se
+    (indexación) como `src.chain` (consulta) importan esta misma función -- así se
     evita a propósito el error #1 que señala la consigna: indexar con un modelo de
     embeddings y consultar con otro distinto, lo que vuelve la distancia vectorial
     inútil sin que nada lo avise en tiempo de ejecución.
@@ -50,7 +55,7 @@ def _build_embeddings() -> Embeddings:
     título de la consigna ("sistema de recuperación semántica LOCAL"). Se
     eligió la variante *multilingüe* en vez de `all-MiniLM-L6-v2` (entrenado
     casi exclusivamente en inglés) porque todo el "cerebro" documental
-    (`rag/docs/`) y las preguntas de prueba están en español -- un modelo
+    (`data/`) y las preguntas de prueba están en español -- un modelo
     solo-inglés degrada la similitud coseno ante sinonimia o lenguaje
     coloquial en español. `normalize_embeddings=True` normaliza los vectores
     a norma unitaria antes de guardarlos, que es lo que este modelo espera
@@ -63,17 +68,21 @@ def _build_embeddings() -> Embeddings:
     `_build_embeddings()` -- volvía a cargar el modelo desde cero. Cacheado,
     se carga una única vez por proceso."""
     model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-    return HuggingFaceEmbeddings(
+    embeddings = HuggingFaceEmbeddings(
         model_name=model_name,
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
+    # La dimensión se mide sobre un vector real (no se asume): si se cambia
+    # EMBEDDING_MODEL en .env, el log refleja la dimensión del modelo nuevo.
+    logger.info("Modelo de embeddings: %s (dimensión %d)", model_name, len(embeddings.embed_query("dimensión")))
+    return embeddings
 
 
 def _cargar_documentos(directorio: Path) -> list[Document]:
     """Carga todos los .txt/.md de `directorio` como `Document` de LangChain,
     con `metadata={"source": <nombre de archivo>}` -- es la metadata que
-    `rag.chain` usa después para reportar `fuentes` sin depender de que el LLM
+    `src.chain` usa después para reportar `fuentes` sin depender de que el LLM
     las recuerde o las invente."""
     documentos = []
     for path in sorted(directorio.glob("*")):
@@ -143,7 +152,7 @@ def ingest_documentos(
     force_reindex: bool = False,
 ) -> Chroma:
     """Módulo de ingesta: fragmenta los documentos de `directorio` (default:
-    `rag/docs`) con un splitter jerárquico (encabezados Markdown, con
+    `data/`) con un splitter jerárquico (encabezados Markdown, con
     `RecursiveCharacterTextSplitter` como fallback dentro de secciones largas
     -- ver `_fragmentar_documento`) y los persiste en una colección de
     ChromaDB en `persist_directory`. Si la colección ya existe y tiene
