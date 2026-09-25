@@ -21,6 +21,7 @@ Pre-entrega 3 · Módulo 3 — AI Engineering (Coderhouse).
 - [Arquitectura interna](#arquitectura-interna)
   - [Módulo de ingesta (`ingestion.py`)](#módulo-de-ingesta-ingestionpy)
   - [Cadena LCEL de generación grounded (`chain.py`)](#cadena-lcel-de-generación-grounded-chainpy)
+  - [Resiliencia entre proveedores (fallback)](#resiliencia-entre-proveedores-fallback)
 - [Evidencia real de ejecución](#evidencia-real-de-ejecución)
 - [Errores comunes evitados (según la consigna)](#errores-comunes-evitados-según-la-consigna)
 - [Tests](#tests)
@@ -100,7 +101,7 @@ Resumen de las decisiones técnicas. El detalle y los hallazgos que las motivaro
 | **Metadatos por fragmento** | `source`, `Header 1`/`2`/`3`, `env`, `created_at` | Permiten citar fuentes sin depender del LLM y filtrar la búsqueda. Detalle en [Esquema de metadatos y filtros](#esquema-de-metadatos-y-filtros). |
 | **Segmentación por entorno (dev/prod)** | Una colección por entorno: `<CHROMA_COLLECTION>_<RAG_ENV>` (`manuales_tecnicos_dev` por default) | Chroma no tiene *namespaces* como Pinecone; el equivalente es una colección separada dentro del mismo `./vectorstore`. Así una re-indexación de prueba en `dev` no pisa los vectores que consulta `prod`. Test: `test_colecciones_por_entorno_no_se_pisan`. |
 | **`top_k`** | 4 | Dentro del rango 3-5 de la consigna: suficiente contexto sin caer en "contexto infinito" (*lost in the middle*, tokens de más). |
-| **LLM de generación** | Claude (`claude-haiku-4-5-20251001`) por default; OpenAI u Ollama intercambiables con `LLM_PROVIDER` en `.env` (o `provider=` en `answer_question()`) | "Local" en la consigna describe a la base vectorial, no al LLM (ver [Qué es "local" acá](#qué-es-local-acá-y-qué-no)). |
+| **LLM de generación** | Claude (`claude-haiku-4-5-20251001`) por default, con **fallback** a OpenAI (`gpt-4o-mini`); configurable con `LLM_PROVIDER` / `LLM_FALLBACK_PROVIDER` (también `ollama`) | "Local" en la consigna describe a la base vectorial, no al LLM (ver [Qué es "local" acá](#qué-es-local-acá-y-qué-no)). El sistema no depende de un solo proveedor: mismo criterio de resiliencia que el Módulo 2 (ver [Resiliencia entre proveedores](#resiliencia-entre-proveedores-fallback)). |
 | **Salida estructurada** | `PydanticOutputParser(RespuestaLLM)` + reintento automático si la salida llega truncada o mal formada | Lo pide la consigna; el reintento evita que una respuesta cortada llegue como válida. |
 
 ## Esquema de metadatos y filtros
@@ -135,8 +136,8 @@ los 4 fragmentos recuperados vienen todos de ese archivo (ver
 ### Requisitos
 
 - Python 3.12. En Windows, con el `py launcher`: `py -3.12`.
-- Una API key de Anthropic (proveedor de generación por default) **o** de OpenAI
-  (`LLM_PROVIDER=openai`). También funciona con [Ollama](https://ollama.com) local, sin API key
+- Una API key de Anthropic **o** de OpenAI (con las dos, cada una sirve de respaldo de la
+  otra). También funciona con [Ollama](https://ollama.com) local, sin API key
   (`LLM_PROVIDER=ollama`).
 - Conexión a internet la primera vez: el modelo de embeddings
   `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` se descarga una vez desde
@@ -178,14 +179,15 @@ los 4 fragmentos recuperados vienen todos de ese archivo (ver
    pip install -r requirements.txt
    ```
 
-4. **Configurar variables de entorno**: copiar `.env.example` a `.env` y completar la API key
-   del proveedor de generación (la única obligatoria):
-   - Con **Anthropic** (default): completar `ANTHROPIC_API_KEY`.
-   - Con **OpenAI**: poner `LLM_PROVIDER=openai` y completar `OPENAI_API_KEY` (usa `gpt-4o-mini`,
-     configurable con `OPENAI_MODEL`).
-
-   Si falta la key del proveedor elegido, `python -m src.main` corta al arrancar con un mensaje
-   que dice cuál falta. Opcional: `RAG_ENV=dev|prod` elige la colección de ChromaDB (ver
+4. **Configurar variables de entorno**: copiar `.env.example` a `.env` y completar **al menos
+   una** API key de generación:
+   - `ANTHROPIC_API_KEY` y/o `OPENAI_API_KEY`. Con las dos cargadas, si el proveedor principal
+     falla, la generación sigue con el otro (ver [Resiliencia entre proveedores](#resiliencia-entre-proveedores-fallback)).
+   - `LLM_PROVIDER` elige el principal (`anthropic` por default) y `LLM_FALLBACK_PROVIDER` el de
+     respaldo (por default, el otro de los dos). También acepta `ollama` (local, sin API key).
+   - Si solo hay una key cargada, el sistema arranca con ese proveedor aunque no sea el
+     configurado como principal. Si no hay ninguna, `python -m src.main` corta al arrancar con
+     un mensaje que dice qué key cargar. Opcional: `RAG_ENV=dev|prod` elige la colección de ChromaDB (ver
    [Decisiones de diseño](#decisiones-de-diseño)).
 
    ```bash
@@ -221,7 +223,7 @@ los 4 fragmentos recuperados vienen todos de ese archivo (ver
    pytest -v
    ```
 
-   Resultado esperado: `52 passed`. Referencia: [`evidencia/tests_pytest.txt`](evidencia/tests_pytest.txt).
+   Resultado esperado: `62 passed`. Referencia: [`evidencia/tests_pytest.txt`](evidencia/tests_pytest.txt).
 
 Para re-indexar desde cero (por ejemplo, después de cambiar `EMBEDDING_MODEL` en `.env`),
 borrar la carpeta `vectorstore/` y volver a correr el paso 5.
@@ -624,6 +626,45 @@ cadena_generacion = pipeline.with_retry(
   diagnóstico permanente, no como algo puntual. Para verlo, subí el nivel del logger a `DEBUG` en
   `src/main.py` (o el que corresponda).
 
+### Resiliencia entre proveedores (fallback)
+
+Mismo criterio que el Módulo 2: el sistema no queda atado a un solo proveedor de generación.
+
+```python
+chain_principal = _build_retryable_chain(provider, model)            # PROMPT | llm | _validar_salida + .with_retry()
+chain_fallback = _build_retryable_chain(fallback_provider, None)     # la misma cadena, con otro proveedor
+chain = chain_principal.with_fallbacks([chain_fallback])
+```
+
+- **Dos niveles**: `.with_retry()` cubre fallas puntuales del principal (un JSON mal formado o
+  truncado, hasta 3 intentos). Si igual falla, porque agotó los reintentos o porque el proveedor
+  entero no responde (caído, sin crédito, key inválida), `.with_fallbacks()` repite la generación
+  completa con el otro proveedor. Un error de credenciales no gasta reintentos en el principal:
+  pasa directo al fallback.
+- **Por default** el principal es `anthropic` y el fallback `openai` (y al revés si
+  `LLM_PROVIDER=openai`). `LLM_FALLBACK_PROVIDER` permite elegir otro, por ejemplo `ollama` local.
+- **Solo se agrega un fallback que puede andar**: si su API key no está cargada, la cadena queda
+  solo con el principal y se avisa una vez en el log. Si el que no tiene key es el principal,
+  `src/main.py` arranca directamente con el fallback.
+- **Queda registrado**: `.with_fallbacks()` traga en silencio el error del principal; un wrapper lo
+  loguea antes, con qué proveedor falló, por qué y cuál tomó su lugar.
+
+**Evidencia real** ([`evidencia/corrida_3_fallback.txt`](evidencia/corrida_3_fallback.txt)):
+`python -m src.main` con una `ANTHROPIC_API_KEY` inválida a propósito y
+`LLM_FALLBACK_PROVIDER=ollama` (`qwen2.5:7b` local). En las 6 preguntas, Anthropic responde
+401 una sola vez (sin reintentos inútiles) y Ollama genera la respuesta. Las respuestas conservan
+los datos puntuales y el caso fuera de contexto sigue dando "No lo sé":
+
+```
+INFO __main__: Proveedor de generación: anthropic (fallback: ollama)
+ERROR src.chain: Falló el proveedor 'anthropic' (AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}); se intenta con el fallback 'ollama'.
+INFO httpx: HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+INFO src.chain: Respuesta generada en 99.48s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md'])
+```
+
+El fallback Anthropic ↔ OpenAI está cubierto por los tests de `TestFallbackEntreProveedores`
+(sin red). El mecanismo es el mismo que en la corrida real; solo cambia qué proveedor responde.
+
 `answer_question()` es el punto de entrada end-to-end:
 
 1. **Retrieval**: `retriever.buscar_fragmentos(vectorstore, pregunta, top_k, filtro)` — `top_k=4`,
@@ -771,7 +812,7 @@ ciego al contenido.
 pytest -v
 ```
 
-52 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
+62 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
 
 - `test_schemas.py`: validación de `RespuestaLLM` (respuesta no vacía, limpieza de espacios,
   campos requeridos, tipos, normalización de `respuesta` a `NO_CONTEXTO_MENSAJE` cuando
@@ -790,9 +831,13 @@ pytest -v
 - `test_retriever.py`: con ChromaDB real y `FakeEmbeddings`, verifica que el filtro por
   `source` restringe la búsqueda a ese documento, que sin filtro busca en toda la colección, que
   el filtro por `env` excluye otros entornos, y el recorte del `extracto`.
-- `test_main.py`: selección de proveedor con `LLM_PROVIDER` (default `anthropic`, `openai`,
-  `ollama` sin key) y que falte la API key o quede el placeholder de `.env.example` corta con un
-  mensaje claro.
+- `test_main.py`: resolución del par principal/fallback (`LLM_PROVIDER` /
+  `LLM_FALLBACK_PROVIDER`): si el principal no tiene key (o tiene el placeholder de
+  `.env.example`) se usa el fallback en vez de cortar, `ollama` no requiere key, y solo corta si
+  no hay ningún proveedor disponible.
+- `TestFallbackEntreProveedores` (en `test_chain.py`): el principal agota sus reintentos y el
+  fallback recupera (principal llamado `MAX_RETRY_ATTEMPTS` veces, fallback 1); un principal
+  caído pasa directo al fallback y queda logueado; un fallback sin API key no se agrega.
 - `test_chain.py`: mockea `_build_model` con `FakeListChatModel` (devuelve, en orden, las
   respuestas configuradas por cada test) para probar `_format_docs` y `_build_model` (selección de
   proveedor). `_validar_salida` se prueba en aislamiento: acepta una salida completa, rechaza

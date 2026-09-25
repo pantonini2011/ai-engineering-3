@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from functools import lru_cache
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -24,6 +25,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 MAX_RETRY_ATTEMPTS = 3
+# Proveedor de generación -> variable con su API key (Ollama corre local, sin key).
+API_KEYS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "ollama": None}
 
 parser = PydanticOutputParser(pydantic_object=RespuestaLLM)
 
@@ -138,20 +141,33 @@ def _format_docs(docs: List[Document]) -> str:
     return "\n\n".join(f"[Fuente: {d.metadata.get('source', 'desconocida')}]\n{d.page_content}" for d in docs)
 
 
-def build_chain(provider: str = "anthropic", model: Optional[str] = None) -> Runnable:
-    """Cadena LCEL de generación grounded: recibe `{"contexto": ..., "pregunta":
-    ...}` (el contexto ya viene de los documentos recuperados por el retriever,
-    ver `answer_question`) y produce un `RespuestaLLM` validado.
-        PROMPT | llm | RunnableLambda(_validar_salida)
-    Envuelta en `.with_retry()` (mismo criterio que el Módulo 2): ante
+def proveedor_disponible(provider: str) -> bool:
+    """True si el proveedor tiene su API key cargada (y no es el placeholder de
+    `.env.example`: el actual "tu_..." o el viejo "sk-..."). Ollama corre
+    local sin API key, así que siempre cuenta como disponible."""
+    variable = API_KEYS.get(provider.lower())
+    if variable is None:
+        return provider.lower() in API_KEYS
+    valor = os.getenv(variable, "").strip()
+    return bool(valor) and not valor.startswith("tu_") and "..." not in valor
+
+
+def fallback_por_defecto(provider: str) -> str:
+    """Mismo cruce que el Módulo 2: anthropic <-> openai (y ollama -> anthropic)."""
+    return "openai" if provider == "anthropic" else "anthropic"
+
+
+def _build_retryable_chain(provider: str, model: Optional[str]) -> Runnable:
+    """PROMPT | llm | RunnableLambda(_validar_salida), envuelta en
+    `.with_retry()` (mismo criterio que el Módulo 2): ante
     `RespuestaIncompletaError` (respuesta truncada, o mal formada/incompleta
     para `PydanticOutputParser`), se reintenta la cadena completa -- un nuevo
     pedido al LLM, no solo un re-parseo del mismo texto -- hasta
     `MAX_RETRY_ATTEMPTS` veces, con backoff exponencial + jitter.
     `retry_if_exception_type` acota el reintento a esa excepción puntual: un
     error de otro tipo (ej. credenciales inválidas, proveedor caído) no vale
-    la pena reintentarlo 3 veces con el mismo resultado, y se propaga directo.
-    """
+    la pena reintentarlo 3 veces con el mismo resultado -- ese caso lo cubre
+    el fallback a otro proveedor (ver `build_chain`)."""
     llm = _build_model(provider, model)
     cadena_generacion = PROMPT | llm | RunnableLambda(_validar_salida)
     return cadena_generacion.with_retry(
@@ -161,6 +177,68 @@ def build_chain(provider: str = "anthropic", model: Optional[str] = None) -> Run
     )
 
 
+def _con_logging_de_fallback(chain: Runnable, provider: str, fallback_provider: str) -> Runnable:
+    """`.with_fallbacks()` traga en silencio la excepción de la cadena que
+    falla -- este wrapper la loguea (una línea, sin traceback) antes de
+    dejarla propagar, para que quede registrado que el proveedor principal
+    falló y cuál tomó su lugar. Mismo criterio que `demo_resiliencia.py` del
+    Módulo 2."""
+
+    async def _invocar(entrada):
+        try:
+            return await chain.ainvoke(entrada)
+        except Exception as error:
+            resumen = (str(error).splitlines() or [""])[0][:200]
+            logger.error(
+                "Falló el proveedor '%s' (%s: %s); se intenta con el fallback '%s'.",
+                provider, type(error).__name__, resumen, fallback_provider,
+            )
+            raise
+
+    return RunnableLambda(_invocar)
+
+
+@lru_cache(maxsize=None)
+def _avisar_sin_fallback(provider: str, fallback_provider: str) -> None:
+    """Avisa una sola vez por proceso (no una vez por pregunta)."""
+    logger.warning(
+        "Sin fallback para '%s': el proveedor '%s' no tiene su API key configurada en .env.",
+        provider, fallback_provider,
+    )
+
+
+def build_chain(
+    provider: str = "anthropic", model: Optional[str] = None, fallback_provider: Optional[str] = None
+) -> Runnable:
+    """Cadena LCEL de generación grounded: recibe `{"contexto": ..., "pregunta":
+    ...}` (el contexto ya viene de los documentos recuperados por el retriever,
+    ver `answer_question`) y produce un `RespuestaLLM` validado.
+
+    Cadena principal + `.with_fallbacks()` (mismo criterio que el Módulo 2):
+    el retry de `_build_retryable_chain` cubre fallas puntuales (un JSON mal
+    formado); si la cadena del proveedor principal igual falla -- agota sus
+    reintentos, o el proveedor entero está caído, sin crédito o con
+    credenciales inválidas --, se reintenta la generación completa con
+    `fallback_provider` en vez de propagar el error.
+
+    Por default el fallback cruza anthropic <-> openai. Solo se agrega si ese
+    proveedor tiene su API key configurada: armar un cliente sin key falla
+    en el acto, y un fallback que no puede andar no aporta nada. Pasar el
+    mismo valor en `provider` y `fallback_provider` desactiva el fallback."""
+    chain_principal = _build_retryable_chain(provider, model)
+
+    if fallback_provider is None:
+        fallback_provider = fallback_por_defecto(provider)
+    if fallback_provider == provider:
+        return chain_principal
+    if not proveedor_disponible(fallback_provider):
+        _avisar_sin_fallback(provider, fallback_provider)
+        return chain_principal
+
+    chain_fallback = _build_retryable_chain(fallback_provider, None)
+    return _con_logging_de_fallback(chain_principal, provider, fallback_provider).with_fallbacks([chain_fallback])
+
+
 async def answer_question(
     pregunta: str,
     provider: str = "anthropic",
@@ -168,6 +246,7 @@ async def answer_question(
     top_k: int = TOP_K,
     vectorstore: Optional[Chroma] = None,
     filtro: Optional[dict] = None,
+    fallback_provider: Optional[str] = None,
 ) -> RespuestaRAG:
     """Punto de entrada end-to-end del RAG: recibe una pregunta en texto plano
     y devuelve un `RespuestaRAG` validado.
@@ -177,7 +256,7 @@ async def answer_question(
        `top_k` fragmentos más relevantes de ChromaDB (ver `src.retriever`),
        opcionalmente restringidos por un `filtro` de metadata.
     2. **Generación grounded**: corre `build_chain()` con esos fragmentos como
-       contexto.
+       contexto (con fallback a `fallback_provider` si el principal falla).
     3. Las `fuentes` finales se calculan en código a partir de los documentos
        que el retriever efectivamente trajo -- no las decide el LLM (ver
        `RespuestaLLM` en `src/schemas.py`) -- y quedan vacías si el modelo no
@@ -196,7 +275,7 @@ async def answer_question(
     docs = [doc for doc, _ in resultados]
 
     contexto = _format_docs(docs)
-    chain = build_chain(provider=provider, model=model)
+    chain = build_chain(provider=provider, model=model, fallback_provider=fallback_provider)
     try:
         resultado_llm: RespuestaLLM = await chain.ainvoke({"contexto": contexto, "pregunta": pregunta})
     except Exception:

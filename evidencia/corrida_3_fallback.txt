@@ -1,0 +1,323 @@
+$ ANTHROPIC_API_KEY=sk-ant-invalida-para-demo LLM_FALLBACK_PROVIDER=ollama python -m src.main   # proveedor principal caído a propósito
+2026-09-24 21:37:08,604 INFO __main__: Proveedor de generación: anthropic (fallback: ollama)
+2026-09-24 21:37:11,235 INFO sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+2026-09-24 21:37:14,613 INFO src.client: Modelo de embeddings: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 (dimensión 384)
+2026-09-24 21:37:14,697 INFO src.ingestion: Colección 'manuales_tecnicos_dev' ya poblada en D:\ai-engineering-3\vectorstore: se omite la re-indexación.
+2026-09-24 21:37:14,712 INFO src.chain: Recuperando contexto para la pregunta: '¿Qué componente es el cuello de botella histórico del sistema bajo carga alta, y por qué?'
+2026-09-24 21:37:14,728 INFO src.retriever: Recuperados 4 fragmento(s): ['arquitectura_sistema.md (similitud=54.26%)', 'monitoreo_alertas.md (similitud=21.45%)', 'monitoreo_alertas.md (similitud=20.03%)', 'monitoreo_alertas.md (similitud=16.51%)']
+2026-09-24 21:37:15,572 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 401 Unauthorized"
+2026-09-24 21:37:15,572 ERROR src.chain: Falló el proveedor 'anthropic' (AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}); se intenta con el fallback 'ollama'.
+2026-09-24 21:38:32,636 INFO httpx: HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+2026-09-24 21:38:54,190 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 21:38:54,191 INFO src.chain: Respuesta generada en 99.48s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md'])
+2026-09-24 21:38:54,193 INFO src.chain: Recuperando contexto para la pregunta: '¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?'
+2026-09-24 21:38:54,222 INFO src.retriever: Recuperados 4 fragmento(s): ['runbook_incidentes.md (similitud=67.01%)', 'monitoreo_alertas.md (similitud=58.25%)', 'arquitectura_sistema.md (similitud=58.10%)', 'arquitectura_sistema.md (similitud=52.37%)']
+2026-09-24 21:38:54,854 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 401 Unauthorized"
+2026-09-24 21:38:54,854 ERROR src.chain: Falló el proveedor 'anthropic' (AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}); se intenta con el fallback 'ollama'.
+2026-09-24 21:39:30,672 INFO httpx: HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+2026-09-24 21:40:02,662 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 21:40:02,662 INFO src.chain: Respuesta generada en 68.47s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md', 'runbook_incidentes.md'])
+2026-09-24 21:40:02,662 INFO src.chain: Recuperando contexto para la pregunta: '¿Los viernes se puede desplegar a producción?'
+2026-09-24 21:40:02,691 INFO src.retriever: Recuperados 4 fragmento(s): ['normativa_despliegue.md (similitud=64.64%)', 'monitoreo_alertas.md (similitud=24.77%)', 'monitoreo_alertas.md (similitud=22.71%)', 'runbook_incidentes.md (similitud=20.35%)']
+2026-09-24 21:40:03,327 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 401 Unauthorized"
+2026-09-24 21:40:03,327 ERROR src.chain: Falló el proveedor 'anthropic' (AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}); se intenta con el fallback 'ollama'.
+2026-09-24 21:40:33,442 INFO httpx: HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+2026-09-24 21:40:41,968 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 21:40:41,968 INFO src.chain: Respuesta generada en 39.31s (contexto_encontrado=True, fuentes=['monitoreo_alertas.md', 'normativa_despliegue.md', 'runbook_incidentes.md'])
+2026-09-24 21:40:41,968 INFO src.chain: Recuperando contexto para la pregunta: '¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?'
+2026-09-24 21:40:41,987 INFO src.retriever: Recuperados 4 fragmento(s): ['monitoreo_alertas.md (similitud=66.55%)', 'runbook_incidentes.md (similitud=65.42%)', 'arquitectura_sistema.md (similitud=62.21%)', 'runbook_incidentes.md (similitud=53.73%)']
+2026-09-24 21:40:42,612 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 401 Unauthorized"
+2026-09-24 21:40:42,612 ERROR src.chain: Falló el proveedor 'anthropic' (AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}); se intenta con el fallback 'ollama'.
+2026-09-24 21:41:14,053 INFO httpx: HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+2026-09-24 21:41:25,174 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 21:41:25,175 INFO src.chain: Respuesta generada en 43.21s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md', 'runbook_incidentes.md'])
+=== Módulo de ingesta ===
+
+=== Preguntas con respuesta en el contexto ===
+
+Pregunta: ¿Qué componente es el cuello de botella histórico del sistema bajo carga alta, y por qué?
+{
+  "pregunta": "¿Qué componente es el cuello de botella histórico del sistema bajo carga alta, y por qué?",
+  "respuesta": "El componente que es el cuello de botella histórico del sistema bajo carga alta es el **pool de conexiones a PostgreSQL**: bajo carga alta (más de 500 pedidos concurrentes), el límite de 100 conexiones de PgBouncer se satura y las requests nuevas quedan esperando una conexión libre, generando timeouts intermitentes en el endpoint `/v1/pedidos`.",
+  "contexto_encontrado": true,
+  "fuentes": [
+    "arquitectura_sistema.md",
+    "monitoreo_alertas.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
+      "similitud": 0.5426,
+      "extracto": "## Consideraciones de escalabilidad El cuello de botella histórico del sistema es el **pool de conexiones a PostgreSQL**...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Stack de observabilidad",
+      "similitud": 0.2145,
+      "extracto": "# Monitoreo y alertas — Plataforma de Pedidos ## Stack de observabilidad El sistema usa Prometheus para recolectar métri...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Dashboards de referencia",
+      "similitud": 0.2003,
+      "extracto": "## Dashboards de referencia - **Dashboard \"Salud de API\"**: latencia, tasa de error y throughput de FastAPI por endpoint...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
+      "similitud": 0.1651,
+      "extracto": "## Canales de alerta Las alertas de severidad **alta** (ej. tasa de 5xx elevada, pool de PostgreSQL agotado) se envían s...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    }
+  ]
+}
+
+Pregunta: ¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?
+{
+  "pregunta": "¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?",
+  "respuesta": "1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100). 2. Si hay una query 'colgada' reteniendo conexiones, identificarla con `SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;` y, si corresponde, cancelarla con `pg_cancel_backend(pid)`. 3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el número de réplicas de PgBouncer o subir el límite de conexiones a 150.",
+  "contexto_encontrado": true,
+  "fuentes": [
+    "arquitectura_sistema.md",
+    "monitoreo_alertas.md",
+    "runbook_incidentes.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.6701,
+      "extracto": "## Incidente 1: Agotamiento del pool de conexiones a PostgreSQL **Síntoma**: el endpoint `POST /v1/pedidos` empieza a de...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
+      "similitud": 0.5825,
+      "extracto": "### PostgreSQL / PgBouncer - Conexiones activas vs. límite configurado (100). Alerta al superar el 80% de uso sostenido ...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
+      "similitud": 0.581,
+      "extracto": "## Consideraciones de escalabilidad El cuello de botella histórico del sistema es el **pool de conexiones a PostgreSQL**...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Flujo de un pedido",
+      "similitud": 0.5237,
+      "extracto": "## Flujo de un pedido 1. El cliente autenticado hace `POST /v1/pedidos` con el carrito. 2. FastAPI valida el payload con...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    }
+  ]
+}
+
+Pregunta: ¿Los viernes se puede desplegar a producción?
+{
+  "pregunta": "¿Los viernes se puede desplegar a producción?",
+  "respuesta": "No, los viernes se prohiben despliegues a producción según el proceso de despliegue a producción.",
+  "contexto_encontrado": true,
+  "fuentes": [
+    "monitoreo_alertas.md",
+    "normativa_despliegue.md",
+    "runbook_incidentes.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "normativa_despliegue.md",
+      "seccion": "Normativa de despliegue — Plataforma de Pedidos > Proceso de despliegue a producción",
+      "similitud": 0.6464,
+      "extracto": "## Proceso de despliegue a producción 1. **Ventana de despliegue**: los despliegues a producción sólo se realizan de lun...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
+      "similitud": 0.2477,
+      "extracto": "### PostgreSQL / PgBouncer - Conexiones activas vs. límite configurado (100). Alerta al superar el 80% de uso sostenido ...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > Celery",
+      "similitud": 0.2271,
+      "extracto": "### Celery - Tasa de tareas en estado `FAILURE` tras agotar los reintentos. - Tiempo de procesamiento promedio por tipo ...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 4: Condición de carrera en actualización de stock",
+      "similitud": 0.2035,
+      "extracto": "## Incidente 4: Condición de carrera en actualización de stock **Síntoma**: el stock de un producto queda en un número n...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    }
+  ]
+}
+
+Pregunta: ¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?
+{
+  "pregunta": "¿Qué umbral de uso de conexiones de PgBouncer dispara una alerta?",
+  "respuesta": "Conexiones activas vs. límite configurado (100). Alerta al superar el 80% de uso sostenido durante más de 2 minutos.",
+  "contexto_encontrado": true,
+  "fuentes": [
+    "arquitectura_sistema.md",
+    "monitoreo_alertas.md",
+    "runbook_incidentes.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
+      "similitud": 0.6655,
+      "extracto": "### PostgreSQL / PgBouncer - Conexiones activas vs. límite configurado (100). Alerta al superar el 80% de uso sostenido ...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.6542,
+      "extracto": "cancelarla con `pg_cancel_backend(pid)`. 3. Si el problema es puramente de volumen (no hay queries colgadas), escalar ho...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "arquitectura_sistema.md",
+      "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
+      "similitud": 0.6221,
+      "extracto": "## Consideraciones de escalabilidad El cuello de botella histórico del sistema es el **pool de conexiones a PostgreSQL**...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.5373,
+      "extracto": "## Incidente 1: Agotamiento del pool de conexiones a PostgreSQL **Síntoma**: el endpoint `POST /v1/pedidos` empieza a de...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    }
+  ]
+}2026-09-24 21:41:25,175 INFO src.chain: Recuperando contexto para la pregunta: '¿Cuál es la política de vacaciones del equipo de guardia?'
+2026-09-24 21:41:25,197 INFO src.retriever: Recuperados 4 fragmento(s): ['normativa_despliegue.md (similitud=35.92%)', 'runbook_incidentes.md (similitud=24.92%)', 'normativa_despliegue.md (similitud=22.65%)', 'monitoreo_alertas.md (similitud=19.26%)']
+2026-09-24 21:41:25,800 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 401 Unauthorized"
+2026-09-24 21:41:25,800 ERROR src.chain: Falló el proveedor 'anthropic' (AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}); se intenta con el fallback 'ollama'.
+2026-09-24 21:41:51,420 INFO httpx: HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+2026-09-24 21:41:57,923 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 21:41:57,924 INFO src.chain: Respuesta generada en 32.75s (contexto_encontrado=False, fuentes=[])
+2026-09-24 21:41:57,924 INFO src.chain: Recuperando contexto para la pregunta: '¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?'
+2026-09-24 21:41:57,954 INFO src.retriever: Recuperados 4 fragmento(s) con filtro {'source': 'runbook_incidentes.md'}: ['runbook_incidentes.md (similitud=67.01%)', 'runbook_incidentes.md (similitud=31.10%)', 'runbook_incidentes.md (similitud=28.09%)', 'runbook_incidentes.md (similitud=27.95%)']
+2026-09-24 21:41:58,572 INFO httpx: HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 401 Unauthorized"
+2026-09-24 21:41:58,572 ERROR src.chain: Falló el proveedor 'anthropic' (AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}); se intenta con el fallback 'ollama'.
+2026-09-24 21:42:36,215 INFO httpx: HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+2026-09-24 21:43:08,871 INFO src.chain: Validación aceptada en este intento.
+2026-09-24 21:43:08,871 INFO src.chain: Respuesta generada en 70.95s (contexto_encontrado=True, fuentes=['runbook_incidentes.md'])
+
+
+=== Pregunta fuera del contexto disponible (debe responder 'No lo sé') ===
+
+Pregunta: ¿Cuál es la política de vacaciones del equipo de guardia?
+{
+  "pregunta": "¿Cuál es la política de vacaciones del equipo de guardia?",
+  "respuesta": "No lo sé, no tengo información sobre eso en el contexto disponible.",
+  "contexto_encontrado": false,
+  "fuentes": [],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "normativa_despliegue.md",
+      "seccion": "Normativa de despliegue — Plataforma de Pedidos > Capacitación y checklist de guardia",
+      "similitud": 0.3592,
+      "extracto": "## Capacitación y checklist de guardia Todo integrante que entra a la guardia (on-call) por primera vez debe: 1. Leer el...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos",
+      "similitud": 0.2492,
+      "extracto": "# Runbook de incidentes — Plataforma de Pedidos Este documento describe los incidentes conocidos, cómo detectarlos y cóm...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "normativa_despliegue.md",
+      "seccion": "Normativa de despliegue — Plataforma de Pedidos > Proceso de despliegue a producción",
+      "similitud": 0.2265,
+      "extracto": "## Proceso de despliegue a producción 1. **Ventana de despliegue**: los despliegues a producción sólo se realizan de lun...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "monitoreo_alertas.md",
+      "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
+      "similitud": 0.1926,
+      "extracto": "## Canales de alerta Las alertas de severidad **alta** (ej. tasa de 5xx elevada, pool de PostgreSQL agotado) se envían s...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    }
+  ]
+}
+
+=== Pregunta con filtro de metadata {'source': 'runbook_incidentes.md'} ===
+
+Pregunta: ¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?
+{
+  "pregunta": "¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?",
+  "respuesta": "1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100). 2. Si hay una query 'colgada' reteniendo conexiones, identificarla con `SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;` y, si corresponde, cancelarla con `pg_cancel_backend(pid)`. 3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el número de réplicas de PgBouncer o subir temporalmente el límite de conexiones a 150.",
+  "contexto_encontrado": true,
+  "fuentes": [
+    "runbook_incidentes.md"
+  ],
+  "fragmentos_recuperados": [
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.6701,
+      "extracto": "## Incidente 1: Agotamiento del pool de conexiones a PostgreSQL **Síntoma**: el endpoint `POST /v1/pedidos` empieza a de...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
+      "similitud": 0.311,
+      "extracto": "cancelarla con `pg_cancel_backend(pid)`. 3. Si el problema es puramente de volumen (no hay queries colgadas), escalar ho...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 2: Emails de confirmación no se envían",
+      "similitud": 0.2809,
+      "extracto": "## Incidente 2: Emails de confirmación no se envían **Síntoma**: el pedido se crea correctamente (`201 Created`), pero e...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    },
+    {
+      "fuente": "runbook_incidentes.md",
+      "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 4: Condición de carrera en actualización de stock",
+      "similitud": 0.2795,
+      "extracto": "## Incidente 4: Condición de carrera en actualización de stock **Síntoma**: el stock de un producto queda en un número n...",
+      "created_at": "2026-09-24T23:51:45+00:00",
+      "env": "dev"
+    }
+  ]
+}

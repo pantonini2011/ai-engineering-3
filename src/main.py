@@ -1,14 +1,13 @@
 import asyncio
 import logging
 import os
+from typing import Optional, Tuple
 
-from src.chain import answer_question
+from src.chain import API_KEYS, answer_question, fallback_por_defecto, proveedor_disponible
 from src.ingestion import ingest_documentos
 
 logger = logging.getLogger(__name__)
 
-# Proveedor de generación -> variable con su API key (Ollama corre local, sin key).
-PROVEEDORES = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY", "ollama": None}
 
 # Preguntas dentro del "cerebro" (data/sample_docs/*.md), sobre distintos documentos.
 PREGUNTAS_CON_CONTEXTO = [
@@ -29,24 +28,40 @@ PREGUNTA_CON_FILTRO = PREGUNTAS_CON_CONTEXTO[1]
 FILTRO = {"source": "runbook_incidentes.md"}
 
 
-def proveedor_configurado() -> str:
-    """Lee `LLM_PROVIDER` del entorno (default "anthropic") y verifica, antes
-    de indexar nada, que su API key esté cargada en `.env` -- así quien corre
-    el script con otra clave (ej. solo OpenAI) recibe un mensaje claro en vez
-    de un error de autenticación a mitad de la corrida."""
-    provider = os.getenv("LLM_PROVIDER", "anthropic").strip().lower()
-    if provider not in PROVEEDORES:
-        raise SystemExit(f"LLM_PROVIDER='{provider}' no soportado. Opciones: {', '.join(PROVEEDORES)}.")
-    variable = PROVEEDORES[provider]
-    valor = os.getenv(variable, "").strip() if variable else None
-    # Placeholders de .env.example (el actual "tu_..." y el viejo "sk-...").
-    if variable and (not valor or valor.startswith("tu_") or "..." in valor):
-        raise SystemExit(f"LLM_PROVIDER={provider} requiere {variable} en .env (ver .env.example).")
-    return provider
+def resolver_proveedores() -> Tuple[str, str]:
+    """Devuelve `(principal, fallback)` para la generación, sin atar el sistema
+    a un solo proveedor (mismo criterio de resiliencia que el Módulo 2):
+
+    - `LLM_PROVIDER` elige el principal (default "anthropic") y
+      `LLM_FALLBACK_PROVIDER` el de respaldo (default: el otro de
+      anthropic/openai, ver `fallback_por_defecto`).
+    - Si el principal no tiene API key pero el fallback sí, se usa el
+      fallback como principal (con aviso) en vez de cortar.
+    - Solo corta si ninguno de los dos está disponible, con un mensaje que
+      dice qué API key cargar.
+    Un fallback sin API key queda desactivado (`build_chain` avisa)."""
+    principal = os.getenv("LLM_PROVIDER", "anthropic").strip().lower()
+    fallback = os.getenv("LLM_FALLBACK_PROVIDER", "").strip().lower() or fallback_por_defecto(principal)
+    for nombre, valor in (("LLM_PROVIDER", principal), ("LLM_FALLBACK_PROVIDER", fallback)):
+        if valor not in API_KEYS:
+            raise SystemExit(f"{nombre}='{valor}' no soportado. Opciones: {', '.join(API_KEYS)}.")
+
+    if proveedor_disponible(principal):
+        return principal, fallback
+    if proveedor_disponible(fallback):
+        logger.warning(
+            "El proveedor principal '%s' no tiene %s en .env: se usa '%s'.", principal, API_KEYS[principal], fallback
+        )
+        return fallback, principal
+    raise SystemExit(
+        f"Ningún proveedor de generación disponible: cargá {API_KEYS[principal]} "
+        f"(LLM_PROVIDER={principal}) o {API_KEYS[fallback]} (LLM_FALLBACK_PROVIDER={fallback}) en .env "
+        "(ver .env.example)."
+    )
 
 
-async def main(provider: str = "anthropic") -> None:
-    logger.info("Proveedor de generación: %s", provider)
+async def main(provider: str = "anthropic", fallback_provider: Optional[str] = None) -> None:
+    logger.info("Proveedor de generación: %s (fallback: %s)", provider, fallback_provider or fallback_por_defecto(provider))
     print("=== Módulo de ingesta ===")
     # Se construye una única vez y se reutiliza en cada pregunta (pasándola
     # explícitamente a answer_question) -- sin esto, cada pregunta reabriría
@@ -55,17 +70,17 @@ async def main(provider: str = "anthropic") -> None:
 
     print("\n=== Preguntas con respuesta en el contexto ===")
     for pregunta in PREGUNTAS_CON_CONTEXTO:
-        resultado = await answer_question(pregunta, provider=provider, vectorstore=vectorstore)
+        resultado = await answer_question(pregunta, provider=provider, fallback_provider=fallback_provider, vectorstore=vectorstore)
         print(f"\nPregunta: {pregunta}")
         print(resultado.model_dump_json(indent=2))
 
     print("\n=== Pregunta fuera del contexto disponible (debe responder 'No lo sé') ===")
-    resultado = await answer_question(PREGUNTA_SIN_CONTEXTO, provider=provider, vectorstore=vectorstore)
+    resultado = await answer_question(PREGUNTA_SIN_CONTEXTO, provider=provider, fallback_provider=fallback_provider, vectorstore=vectorstore)
     print(f"\nPregunta: {PREGUNTA_SIN_CONTEXTO}")
     print(resultado.model_dump_json(indent=2))
 
     print(f"\n=== Pregunta con filtro de metadata {FILTRO} ===")
-    resultado = await answer_question(PREGUNTA_CON_FILTRO, provider=provider, vectorstore=vectorstore, filtro=FILTRO)
+    resultado = await answer_question(PREGUNTA_CON_FILTRO, provider=provider, fallback_provider=fallback_provider, vectorstore=vectorstore, filtro=FILTRO)
     print(f"\nPregunta: {PREGUNTA_CON_FILTRO}")
     print(resultado.model_dump_json(indent=2))
 
@@ -78,4 +93,4 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=[logging.StreamHandler(), logging.FileHandler("rag.log", encoding="utf-8")],
     )
-    asyncio.run(main(proveedor_configurado()))
+    asyncio.run(main(*resolver_proveedores()))

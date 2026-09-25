@@ -111,7 +111,8 @@ class TestBuildChain:
         malformada = "esto no es JSON valido en absoluto"
         llm = _fake_llm([malformada] * 5)
         monkeypatch.setattr(chain_module, "_build_model", lambda provider="openai", model=None: llm)
-        chain = chain_module.build_chain()
+        # fallback_provider == provider desactiva el fallback, para aislar el retry puro.
+        chain = chain_module.build_chain(provider="anthropic", fallback_provider="anthropic")
         with pytest.raises(chain_module.RespuestaIncompletaError):
             await chain.ainvoke({"contexto": "contexto", "pregunta": "algo"})
 
@@ -129,11 +130,80 @@ class TestBuildChain:
         monkeypatch.setattr(
             chain_module, "_build_model", lambda provider="openai", model=None: RunnableLambda(_llm_con_error)
         )
-        chain = chain_module.build_chain()
+        chain = chain_module.build_chain(provider="anthropic", fallback_provider="anthropic")
         with pytest.raises(ValueError):
             await chain.ainvoke({"contexto": "contexto", "pregunta": "algo"})
         assert len(llamadas) == 1
 
+
+
+class TestFallbackEntreProveedores:
+    """Mismo criterio de resiliencia que el Módulo 2: si el proveedor principal
+    falla, `.with_fallbacks()` reintenta la generación completa con otro."""
+
+    VALIDA = '{"respuesta": "El pool de conexiones a PostgreSQL.", "contexto_encontrado": true}'
+
+    async def test_recurre_al_fallback_si_el_principal_agota_reintentos(self, monkeypatch):
+        llamadas = {"anthropic": 0, "openai": 0}
+        respuestas = {"anthropic": "esto no es JSON", "openai": self.VALIDA}
+
+        def _modelo(provider="anthropic", model=None):
+            def _responder(_input):
+                llamadas[provider] += 1
+                return AIMessage(content=respuestas[provider], response_metadata={})
+
+            return RunnableLambda(_responder)
+
+        monkeypatch.setattr(chain_module, "_build_model", _modelo)
+        chain = chain_module.build_chain(provider="anthropic")
+        resultado = await chain.ainvoke({"contexto": "contexto", "pregunta": "algo"})
+        assert resultado.respuesta == "El pool de conexiones a PostgreSQL."
+        assert llamadas == {"anthropic": chain_module.MAX_RETRY_ATTEMPTS, "openai": 1}
+
+    async def test_recurre_al_fallback_si_el_principal_esta_caido(self, monkeypatch, caplog):
+        """Un error no reintentable (credenciales inválidas, proveedor caído) no
+        gasta reintentos en el principal: pasa directo al fallback, y queda
+        logueado qué proveedor falló y cuál tomó su lugar."""
+
+        async def _caido(_input):
+            raise ConnectionError("proveedor caído")
+
+        def _modelo(provider="anthropic", model=None):
+            return RunnableLambda(_caido) if provider == "anthropic" else _fake_llm([self.VALIDA])
+
+        monkeypatch.setattr(chain_module, "_build_model", _modelo)
+        chain = chain_module.build_chain(provider="anthropic")
+        resultado = await chain.ainvoke({"contexto": "contexto", "pregunta": "algo"})
+        assert resultado.contexto_encontrado is True
+        assert "Falló el proveedor 'anthropic'" in caplog.text
+        assert "fallback 'openai'" in caplog.text
+
+    async def test_sin_api_key_del_fallback_no_se_agrega(self, monkeypatch):
+        """Si el fallback no tiene API key, la cadena queda solo con el principal
+        (y su error se propaga) en vez de romper al construir un cliente sin key."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        construidos = []
+
+        def _modelo(provider="anthropic", model=None):
+            construidos.append(provider)
+            return _fake_llm([self.VALIDA])
+
+        monkeypatch.setattr(chain_module, "_build_model", _modelo)
+        chain_module.build_chain(provider="anthropic")
+        assert construidos == ["anthropic"]
+
+    def test_fallback_por_defecto_cruza_proveedores(self):
+        assert chain_module.fallback_por_defecto("anthropic") == "openai"
+        assert chain_module.fallback_por_defecto("openai") == "anthropic"
+        assert chain_module.fallback_por_defecto("ollama") == "anthropic"
+
+    @pytest.mark.parametrize("valor", ["", "tu_openai_api_key", "sk-..."])
+    def test_placeholder_o_vacia_no_cuenta_como_disponible(self, monkeypatch, valor):
+        monkeypatch.setenv("OPENAI_API_KEY", valor)
+        assert chain_module.proveedor_disponible("openai") is False
+
+    def test_ollama_siempre_disponible(self):
+        assert chain_module.proveedor_disponible("ollama") is True
 
 class TestAnswerQuestion:
     async def test_con_contexto_encontrado_incluye_fuentes_deduplicadas(self, monkeypatch):
@@ -146,7 +216,7 @@ class TestAnswerQuestion:
         monkeypatch.setattr(
             chain_module,
             "build_chain",
-            lambda provider="openai", model=None: FakeChain(
+            lambda provider="openai", model=None, fallback_provider=None: FakeChain(
                 RespuestaLLM(respuesta="El pool de PostgreSQL.", contexto_encontrado=True)
             ),
         )
@@ -161,7 +231,7 @@ class TestAnswerQuestion:
         monkeypatch.setattr(
             chain_module,
             "build_chain",
-            lambda provider="openai", model=None: FakeChain(
+            lambda provider="openai", model=None, fallback_provider=None: FakeChain(
                 RespuestaLLM(respuesta="No lo sé.", contexto_encontrado=False)
             ),
         )
@@ -184,7 +254,7 @@ class TestAnswerQuestion:
         monkeypatch.setattr(
             chain_module,
             "build_chain",
-            lambda provider="openai", model=None: FakeChain(
+            lambda provider="openai", model=None, fallback_provider=None: FakeChain(
                 RespuestaLLM(respuesta="No lo sé.", contexto_encontrado=False)
             ),
         )
@@ -214,7 +284,7 @@ class TestAnswerQuestion:
         monkeypatch.setattr(
             chain_module,
             "build_chain",
-            lambda provider="openai", model=None: FakeChain(RespuestaLLM(respuesta="Ok.", contexto_encontrado=True)),
+            lambda provider="openai", model=None, fallback_provider=None: FakeChain(RespuestaLLM(respuesta="Ok.", contexto_encontrado=True)),
         )
         await chain_module.answer_question(
             "algo", vectorstore=vectorstore, filtro={"source": "runbook_incidentes.md"}
@@ -226,7 +296,7 @@ class TestAnswerQuestion:
         monkeypatch.setattr(
             chain_module,
             "build_chain",
-            lambda provider="openai", model=None: FakeChain(
+            lambda provider="openai", model=None, fallback_provider=None: FakeChain(
                 RespuestaLLM(respuesta="No lo sé.", contexto_encontrado=False)
             ),
         )
