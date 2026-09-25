@@ -100,7 +100,7 @@ Resumen de las decisiones técnicas. El detalle y los hallazgos que las motivaro
 | **Metadatos por fragmento** | `source`, `Header 1`/`2`/`3`, `env`, `created_at` | Permiten citar fuentes sin depender del LLM y filtrar la búsqueda. Detalle en [Esquema de metadatos y filtros](#esquema-de-metadatos-y-filtros). |
 | **Segmentación por entorno (dev/prod)** | Una colección por entorno: `<CHROMA_COLLECTION>_<RAG_ENV>` (`manuales_tecnicos_dev` por default) | Chroma no tiene *namespaces* como Pinecone; el equivalente es una colección separada dentro del mismo `./vectorstore`. Así una re-indexación de prueba en `dev` no pisa los vectores que consulta `prod`. Test: `test_colecciones_por_entorno_no_se_pisan`. |
 | **`top_k`** | 4 | Dentro del rango 3-5 de la consigna: suficiente contexto sin caer en "contexto infinito" (*lost in the middle*, tokens de más). |
-| **LLM de generación** | Claude (`claude-haiku-4-5-20251001`) por default; OpenAI u Ollama intercambiables con `provider=` | "Local" en la consigna describe a la base vectorial, no al LLM (ver [Qué es "local" acá](#qué-es-local-acá-y-qué-no)). |
+| **LLM de generación** | Claude (`claude-haiku-4-5-20251001`) por default; OpenAI u Ollama intercambiables con `LLM_PROVIDER` en `.env` (o `provider=` en `answer_question()`) | "Local" en la consigna describe a la base vectorial, no al LLM (ver [Qué es "local" acá](#qué-es-local-acá-y-qué-no)). |
 | **Salida estructurada** | `PydanticOutputParser(RespuestaLLM)` + reintento automático si la salida llega truncada o mal formada | Lo pide la consigna; el reintento evita que una respuesta cortada llegue como válida. |
 
 ## Esquema de metadatos y filtros
@@ -135,8 +135,9 @@ los 4 fragmentos recuperados vienen todos de ese archivo (ver
 ### Requisitos
 
 - Python 3.12. En Windows, con el `py launcher`: `py -3.12`.
-- Una API key de Anthropic (proveedor de generación por default). Opcional: OpenAI u
-  [Ollama](https://ollama.com) si se usa `provider="openai"` / `provider="ollama"`.
+- Una API key de Anthropic (proveedor de generación por default) **o** de OpenAI
+  (`LLM_PROVIDER=openai`). También funciona con [Ollama](https://ollama.com) local, sin API key
+  (`LLM_PROVIDER=ollama`).
 - Conexión a internet la primera vez: el modelo de embeddings
   `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` se descarga una vez desde
   Hugging Face Hub y queda cacheado en disco. No necesita API key.
@@ -177,9 +178,15 @@ los 4 fragmentos recuperados vienen todos de ese archivo (ver
    pip install -r requirements.txt
    ```
 
-4. **Configurar variables de entorno**: copiar `.env.example` a `.env` y completar
-   `ANTHROPIC_API_KEY` (la única obligatoria). Opcional: `RAG_ENV=dev|prod` elige la colección
-   de ChromaDB (ver [Decisiones de diseño](#decisiones-de-diseño)).
+4. **Configurar variables de entorno**: copiar `.env.example` a `.env` y completar la API key
+   del proveedor de generación (la única obligatoria):
+   - Con **Anthropic** (default): completar `ANTHROPIC_API_KEY`.
+   - Con **OpenAI**: poner `LLM_PROVIDER=openai` y completar `OPENAI_API_KEY` (usa `gpt-4o-mini`,
+     configurable con `OPENAI_MODEL`).
+
+   Si falta la key del proveedor elegido, `python -m src.main` corta al arrancar con un mensaje
+   que dice cuál falta. Opcional: `RAG_ENV=dev|prod` elige la colección de ChromaDB (ver
+   [Decisiones de diseño](#decisiones-de-diseño)).
 
    ```bash
    copy .env.example .env           # Linux/Mac: cp .env.example .env
@@ -214,7 +221,7 @@ los 4 fragmentos recuperados vienen todos de ese archivo (ver
    pytest -v
    ```
 
-   Resultado esperado: `45 passed`. Referencia: [`evidencia/tests_pytest.txt`](evidencia/tests_pytest.txt).
+   Resultado esperado: `52 passed`. Referencia: [`evidencia/tests_pytest.txt`](evidencia/tests_pytest.txt).
 
 Para re-indexar desde cero (por ejemplo, después de cambiar `EMBEDDING_MODEL` en `.env`),
 borrar la carpeta `vectorstore/` y volver a correr el paso 5.
@@ -764,7 +771,7 @@ ciego al contenido.
 pytest -v
 ```
 
-45 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
+52 tests, sin llamadas de red reales (mismo criterio que los Módulos 1 y 2):
 
 - `test_schemas.py`: validación de `RespuestaLLM` (respuesta no vacía, limpieza de espacios,
   campos requeridos, tipos, normalización de `respuesta` a `NO_CONTEXTO_MENSAJE` cuando
@@ -783,6 +790,9 @@ pytest -v
 - `test_retriever.py`: con ChromaDB real y `FakeEmbeddings`, verifica que el filtro por
   `source` restringe la búsqueda a ese documento, que sin filtro busca en toda la colección, que
   el filtro por `env` excluye otros entornos, y el recorte del `extracto`.
+- `test_main.py`: selección de proveedor con `LLM_PROVIDER` (default `anthropic`, `openai`,
+  `ollama` sin key) y que falte la API key o quede el placeholder de `.env.example` corta con un
+  mensaje claro.
 - `test_chain.py`: mockea `_build_model` con `FakeListChatModel` (devuelve, en orden, las
   respuestas configuradas por cada test) para probar `_format_docs` y `_build_model` (selección de
   proveedor). `_validar_salida` se prueba en aislamiento: acepta una salida completa, rechaza

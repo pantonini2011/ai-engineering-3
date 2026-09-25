@@ -8,7 +8,7 @@ generación con `provider="anthropic"`, modelo `claude-haiku-4-5-20251001`; `RAG
 |---|---|---|
 | [`corrida_1_indexacion.txt`](corrida_1_indexacion.txt) | `python -m src.main` con `./vectorstore` borrado | Ingesta: 4 documentos → 24 fragmentos persistidos en la colección `manuales_tecnicos_dev`; retrieval con `top_k=4`; 4 respuestas con contexto, 1 "No lo sé" y 1 consulta con filtro de metadata (`source = runbook_incidentes.md`); cada respuesta con sus `fragmentos_recuperados` (similitud, extracto y metadata) |
 | [`corrida_2_persistencia.txt`](corrida_2_persistencia.txt) | `python -m src.main` otra vez, con `./vectorstore` ya creado | Persistencia: `Colección 'manuales_tecnicos_dev' ya poblada ... se omite la re-indexación`; mismos fragmentos y mismas similitudes que en la corrida 1 (mismo modelo de embeddings para indexar y consultar) |
-| [`tests_pytest.txt`](tests_pytest.txt) | `pytest -v` | 45 tests en verde, sin llamadas de red ni API keys |
+| [`tests_pytest.txt`](tests_pytest.txt) | `pytest -v` | 52 tests en verde, sin llamadas de red ni API keys |
 
 Notas para leer los logs:
 
