@@ -172,7 +172,7 @@ Lo que se guarda en ChromaDB por cada fragmento, y cómo aparece en la salida JS
 |---|---|---|---|
 | `fuente` | metadata `source` | `runbook_incidentes.md` | Nombre del archivo de origen. Se usa para las citas (`fuentes`) y para filtrar por documento. |
 | `seccion` | metadata `Header 1` / `Header 2` / `Header 3` | `Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL` | Encabezado jerárquico del fragmento (los niveles unidos con `>`), generado por `MarkdownHeaderTextSplitter`. |
-| `created_at` | metadata `created_at` | `2026-09-25T19:41:52+00:00` | Timestamp ISO 8601 (UTC) de la ingesta. Sirve para detectar una base desactualizada respecto de `data/sample_docs/`. |
+| `created_at` | metadata `created_at` | `2026-09-25T19:52:27+00:00` | Timestamp ISO 8601 (UTC) de la ingesta. Sirve para detectar una base desactualizada respecto de `data/sample_docs/`. |
 | `env` | metadata `env` | `dev` | Entorno (`dev` / `prod`), tomado de `RAG_ENV` al indexar. |
 | `extracto` | documento (`page_content`) | `## Incidente 1: Agotamiento del pool de conexiones a PostgreSQL **Síntoma**: el endpoint ...` | Texto original recuperado, para auditar qué leyó el LLM. En el JSON se muestran los primeros 120 caracteres (`LARGO_EXTRACTO`); el texto completo de cada fragmento se loguea a nivel `DEBUG`. |
 | `similitud` | se calcula de la distancia | `0.6701` | `1 - distancia coseno` que devolvió Chroma para esa consulta. |
@@ -291,7 +291,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
       "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
       "similitud": 0.6701,
       "extracto": "## Incidente 1: Agotamiento del pool de conexiones a PostgreSQL **Síntoma**: el endpoint `POST /v1/pedidos` empieza a de...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -299,7 +299,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
       "similitud": 0.5825,
       "extracto": "### PostgreSQL / PgBouncer - Conexiones activas vs. límite configurado (100). Alerta al superar el 80% de uso sostenido ...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -307,7 +307,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
       "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
       "similitud": 0.581,
       "extracto": "## Consideraciones de escalabilidad El cuello de botella histórico del sistema es el **pool de conexiones a PostgreSQL**...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -315,7 +315,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
       "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Flujo de un pedido",
       "similitud": 0.5237,
       "extracto": "## Flujo de un pedido 1. El cliente autenticado hace `POST /v1/pedidos` con el carrito. 2. FastAPI valida el payload con...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     }
   ]
@@ -342,7 +342,7 @@ por qué?
       "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
       "similitud": 0.5426,
       "extracto": "## Consideraciones de escalabilidad El cuello de botella histórico del sistema es el **pool de conexiones a PostgreSQL**...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -350,7 +350,7 @@ por qué?
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Stack de observabilidad",
       "similitud": 0.2145,
       "extracto": "# Monitoreo y alertas — Plataforma de Pedidos ## Stack de observabilidad El sistema usa Prometheus para recolectar métri...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -358,7 +358,7 @@ por qué?
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Dashboards de referencia",
       "similitud": 0.2003,
       "extracto": "## Dashboards de referencia - **Dashboard \"Salud de API\"**: latencia, tasa de error y throughput de FastAPI por endpoint...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -366,7 +366,7 @@ por qué?
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
       "similitud": 0.1651,
       "extracto": "## Canales de alerta Las alertas de severidad **alta** (ej. tasa de 5xx elevada, pool de PostgreSQL agotado) se envían s...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     }
   ]
@@ -393,7 +393,7 @@ queda vacía:
       "seccion": "Normativa de despliegue — Plataforma de Pedidos > Capacitación y checklist de guardia",
       "similitud": 0.3592,
       "extracto": "## Capacitación y checklist de guardia Todo integrante que entra a la guardia (on-call) por primera vez debe: 1. Leer el...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -401,7 +401,7 @@ queda vacía:
       "seccion": "Runbook de incidentes — Plataforma de Pedidos",
       "similitud": 0.2492,
       "extracto": "# Runbook de incidentes — Plataforma de Pedidos Este documento describe los incidentes conocidos, cómo detectarlos y cóm...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -409,7 +409,7 @@ queda vacía:
       "seccion": "Normativa de despliegue — Plataforma de Pedidos > Proceso de despliegue a producción",
       "similitud": 0.2265,
       "extracto": "## Proceso de despliegue a producción 1. **Ventana de despliegue**: los despliegues a producción sólo se realizan de lun...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     },
     {
@@ -417,7 +417,7 @@ queda vacía:
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
       "similitud": 0.1926,
       "extracto": "## Canales de alerta Las alertas de severidad **alta** (ej. tasa de 5xx elevada, pool de PostgreSQL agotado) se envían s...",
-      "created_at": "2026-09-25T19:41:52+00:00",
+      "created_at": "2026-09-25T19:52:27+00:00",
       "env": "dev"
     }
   ]
