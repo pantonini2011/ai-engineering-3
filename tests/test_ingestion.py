@@ -145,7 +145,7 @@ class TestFragmentarDocumento:
         assert fragmentos[0].metadata["Header 2"] == "Incidente 1"
 
     def test_aplica_fallback_dentro_de_una_seccion_larga_sin_mezclar_otra(self):
-        seccion_larga = "Contenido de relleno para forzar el fallback. " * 40  # > CHUNK_SIZE
+        seccion_larga = "Contenido de relleno para forzar el fallback. " * 120  # > CHUNK_SIZE
         texto = f"## Sección larga\n\n{seccion_larga}\n\n## Sección corta\n\nTexto breve.\n"
         documento = Document(page_content=texto, metadata={"source": "doc.md"})
         fragmentos = ingest_module._fragmentar_documento(documento)
@@ -162,7 +162,7 @@ class TestFragmentarDocumento:
         assert len(de_la_corta) == 1
 
     def test_texto_sin_encabezados_cae_directo_al_fallback(self):
-        texto = "Contenido plano sin ningún encabezado Markdown. " * 40
+        texto = "Contenido plano sin ningún encabezado Markdown. " * 120
         documento = Document(page_content=texto, metadata={"source": "plano.txt"})
         fragmentos = ingest_module._fragmentar_documento(documento)
 

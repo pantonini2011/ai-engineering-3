@@ -12,8 +12,10 @@ from src import client
 logger = logging.getLogger(__name__)
 
 DOCS_DIR = client.PROJECT_ROOT / "data" / "sample_docs"
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 150
+# Tamaños en TOKENS del tokenizer del modelo de embeddings (no en
+# caracteres): bloque de 600 tokens (rango 500-800) y overlap de 90 (15%).
+CHUNK_SIZE = 600
+CHUNK_OVERLAP = 90
 # Splitter jerárquico: primero por encabezado Markdown (mantiene una sección
 # semántica completa -- ej. un incidente entero, con síntoma/causa/resolución
 # -- en un mismo fragmento), y recién para las secciones que sigan siendo
@@ -38,6 +40,12 @@ def _cargar_documentos(directorio: Path) -> list[Document]:
     return documentos
 
 
+def _contar_tokens(texto: str) -> int:
+    """Largo de `texto` en tokens del modelo de embeddings (sin los tokens
+    especiales de inicio/fin). Es la `length_function` del chunking."""
+    return len(client.build_tokenizer().encode(texto, add_special_tokens=False))
+
+
 def _fragmentar_documento(documento: Document) -> list[Document]:
     """Fragmenta un `Document` en dos pasos:
 
@@ -50,7 +58,7 @@ def _fragmentar_documento(documento: Document) -> list[Document]:
        `strip_headers=False` deja el título de la sección adentro del
        `page_content` (útil como contexto para el LLM, no solo en metadata).
     2. `RecursiveCharacterTextSplitter` como *fallback*, solo para las
-       secciones que sigan superando `CHUNK_SIZE` después del paso 1 --
+       secciones que sigan superando `CHUNK_SIZE` tokens después del paso 1 --
        nunca mezcla contenido de dos secciones (o documentos) distintos en
        el mismo fragmento, porque corta *dentro* de una sección ya acotada,
        no sobre el texto completo del documento.
@@ -61,12 +69,18 @@ def _fragmentar_documento(documento: Document) -> list[Document]:
     header_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=HEADERS_A_DIVIDIR, strip_headers=False)
     secciones = header_splitter.split_text(documento.page_content)
 
-    fallback_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+    # lambda (y no la función directa) para que los tests puedan reemplazar
+    # `_contar_tokens` por un conteo sin red.
+    fallback_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        length_function=lambda texto: _contar_tokens(texto),
+    )
 
     fragmentos = []
     for seccion in secciones:
         metadata = {**documento.metadata, **seccion.metadata}
-        if len(seccion.page_content) <= CHUNK_SIZE:
+        if _contar_tokens(seccion.page_content) <= CHUNK_SIZE:
             fragmentos.append(Document(page_content=seccion.page_content, metadata=metadata))
         else:
             for texto in fallback_splitter.split_text(seccion.page_content):

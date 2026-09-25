@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ COLLECTION_NAME = f"{os.getenv('CHROMA_COLLECTION', 'manuales_tecnicos')}_{RAG_E
 # literalmente `1 - similitud_coseno`, más interpretable que la alternativa
 # implícita (`2 - 2·similitud_coseno`).
 COLLECTION_METADATA = {"hnsw:space": "cosine"}
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
 
 @lru_cache(maxsize=1)
@@ -65,16 +67,23 @@ def build_embeddings() -> Embeddings:
     liviana), `HuggingFaceEmbeddings` carga el modelo de `sentence-transformers`
     en memoria (~2s) cada vez que se instancia. Cacheado, se carga una única
     vez por proceso."""
-    model_name = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     embeddings = HuggingFaceEmbeddings(
-        model_name=model_name,
+        model_name=EMBEDDING_MODEL,
         model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
     # La dimensión se mide sobre un vector real (no se asume): si se cambia
     # EMBEDDING_MODEL en .env, el log refleja la dimensión del modelo nuevo.
-    logger.info("Modelo de embeddings: %s (dimensión %d)", model_name, len(embeddings.embed_query("dimensión")))
+    logger.info("Modelo de embeddings: %s (dimensión %d)", EMBEDDING_MODEL, len(embeddings.embed_query("dimensión")))
     return embeddings
+
+
+@lru_cache(maxsize=1)
+def build_tokenizer() -> PreTrainedTokenizerBase:
+    """Tokenizer del mismo modelo de embeddings: el chunking mide el tamaño de
+    cada fragmento en los tokens que ve el modelo, no en caracteres. Se
+    carga desde el mismo cache local del Hub que `build_embeddings()`."""
+    return AutoTokenizer.from_pretrained(EMBEDDING_MODEL)
 
 
 def get_vectorstore(

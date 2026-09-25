@@ -77,7 +77,7 @@ Por qué este modelo:
 
 - **Ejecución local eficiente**: es un MiniLM de 12 capas (~118M parámetros) que corre en CPU sin
   GPU ni servidor. Se descarga una vez desde Hugging Face Hub y queda cacheado; no necesita API
-  key. 384 dimensiones alcanzan para un corpus chico y hacen la indexación rápida (24 fragmentos
+  key. 384 dimensiones alcanzan para un corpus chico y hacen la indexación rápida (21 fragmentos
   en ~1 s) y la base liviana (como referencia, `text-embedding-3-small` de OpenAI usa 1536).
 - **Multilingüe**: los documentos y las preguntas están en español. Un modelo entrenado casi solo
   en inglés (ej. `all-MiniLM-L6-v2`) mide peor la similitud ante sinónimos y paráfrasis en
@@ -105,24 +105,31 @@ Splitter **jerárquico** en [`src/ingestion.py`](src/ingestion.py) (`_fragmentar
 
 1. `MarkdownHeaderTextSplitter` corta por encabezados `#` / `##` / `###`. Cada sección del manual
    (ej. un incidente completo, con síntoma, causa y resolución) queda en un solo fragmento.
-2. Solo si una sección supera `CHUNK_SIZE = 1000` caracteres, se la subdivide con
-   `RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)`, siempre **dentro** de esa
+2. Solo si una sección supera `CHUNK_SIZE = 600` **tokens**, se la subdivide con
+   `RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=90)`, siempre **dentro** de esa
    sección: nunca mezcla dos secciones o dos documentos en un fragmento.
 
-| Parámetro | Valor | En tokens (aprox.) |
-|---|---|---|
-| Tamaño de bloque | 1000 caracteres | ~250-300 tokens en español |
-| Overlap | 150 caracteres (**15%**) | ~40 tokens |
-| Resultado | 24 fragmentos para 4 documentos | — |
+| Parámetro | Valor |
+|---|---|
+| Tamaño de bloque | 600 tokens (rango 500-800) |
+| Overlap | 90 tokens (**15%**) |
+| Unidad de medida | Tokens del tokenizer del propio modelo de embeddings (`_contar_tokens()`, con `client.build_tokenizer()`) |
+| Resultado | 21 fragmentos para 4 documentos (uno por sección) |
 
-El tamaño se mide en caracteres porque es lo que usa `RecursiveCharacterTextSplitter` por
-default. Queda por debajo de los 500-800 tokens de referencia a propósito: las secciones de estos
-manuales son cortas (la mayoría entra entera en un fragmento), y el modelo de embeddings trunca la
-entrada en 128 tokens (`max_seq_length` de `paraphrase-multilingual-MiniLM-L12-v2`). Ya con 1000
-caracteres el embedding se calcula sobre el comienzo del fragmento (el encabezado y las primeras
-líneas, que es lo que mejor describe la sección); con bloques de 500-800 tokens, la mayor parte
-de cada fragmento no influiría en su vector. El overlap del 15%
-preserva el contexto en las pocas secciones que sí se parten (3 en todo el corpus).
+El tamaño se mide en tokens del mismo modelo que genera los embeddings, no en caracteres (el
+default de `RecursiveCharacterTextSplitter`): así el límite corresponde a lo que el modelo
+realmente procesa, sin depender de cuántos caracteres por token tenga el español.
+
+En este corpus ninguna sección llega al límite: la más larga es "Incidente 1" del runbook, con
+321 tokens. Por eso cada sección queda entera en un fragmento (con síntoma, causa y pasos de
+resolución juntos) y el fallback con overlap no llega a activarse. Queda como protección para
+documentos con secciones más largas. Con el límite anterior de 1000 caracteres se partían 3
+secciones y había 24 fragmentos.
+
+Un límite a tener en cuenta: el modelo de embeddings solo mira los primeros 128 tokens de cada
+texto (`max_seq_length` de `paraphrase-multilingual-MiniLM-L12-v2`). En fragmentos más largos, el
+vector representa el encabezado y las primeras líneas de la sección, que es lo que mejor la
+describe; el LLM igual recibe el fragmento completo como contexto.
 
 Por qué no un splitter plano: la primera versión cortaba cada 1000 caracteres sin mirar el
 contenido y separaba el síntoma de un incidente de sus pasos de resolución, y el sistema terminaba
@@ -165,7 +172,7 @@ Lo que se guarda en ChromaDB por cada fragmento, y cómo aparece en la salida JS
 |---|---|---|---|
 | `fuente` | metadata `source` | `runbook_incidentes.md` | Nombre del archivo de origen. Se usa para las citas (`fuentes`) y para filtrar por documento. |
 | `seccion` | metadata `Header 1` / `Header 2` / `Header 3` | `Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL` | Encabezado jerárquico del fragmento (los niveles unidos con `>`), generado por `MarkdownHeaderTextSplitter`. |
-| `created_at` | metadata `created_at` | `2026-09-24T23:51:45+00:00` | Timestamp ISO 8601 (UTC) de la ingesta. Sirve para detectar una base desactualizada respecto de `data/sample_docs/`. |
+| `created_at` | metadata `created_at` | `2026-09-25T19:41:52+00:00` | Timestamp ISO 8601 (UTC) de la ingesta. Sirve para detectar una base desactualizada respecto de `data/sample_docs/`. |
 | `env` | metadata `env` | `dev` | Entorno (`dev` / `prod`), tomado de `RAG_ENV` al indexar. |
 | `extracto` | documento (`page_content`) | `## Incidente 1: Agotamiento del pool de conexiones a PostgreSQL **Síntoma**: el endpoint ...` | Texto original recuperado, para auditar qué leyó el LLM. En el JSON se muestran los primeros 120 caracteres (`LARGO_EXTRACTO`); el texto completo de cada fragmento se loguea a nivel `DEBUG`. |
 | `similitud` | se calcula de la distancia | `0.6701` | `1 - distancia coseno` que devolvió Chroma para esa consulta. |
@@ -236,7 +243,7 @@ Alternativas sin tocar la política: usar `cmd`, o llamar directo al Python del 
 **Qué hace `python -m src.main`**:
 
 1. Si `./vectorstore` no existe, fragmenta los 4 documentos y los persiste en ChromaDB
-   (`Indexando 24 fragmentos de 4 documento(s) ...`). Si ya existe, no re-indexa
+   (`Indexando 21 fragmentos de 4 documento(s) ...`). Si ya existe, no re-indexa
    (`Colección 'manuales_tecnicos_dev' ya poblada ...: se omite la re-indexación.`).
 2. Hace 6 preguntas: 4 con respuesta en los documentos, 1 deliberadamente fuera de ellos
    ("No lo sé") y 1 con filtro de metadata (`source = runbook_incidentes.md`).
@@ -271,7 +278,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
 ```json
 {
   "pregunta": "¿Qué pasos hay que seguir para resolver un agotamiento del pool de conexiones a PostgreSQL?",
-  "respuesta": "Según el runbook de incidentes, los pasos para resolver un agotamiento del pool de conexiones a PostgreSQL son:\n\n1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100).\n\n2. Si hay una query \"colgada\" reteniendo conexiones, identificarla con:\n   ```\n   SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;\n   ```\n   y, si corresponde, cancelarla con `pg_cancel_backend(pid)`.\n\n3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el número de réplicas de PgBouncer o subir el límite de conexiones.",
+  "respuesta": "Según el runbook de incidentes, los pasos para resolver un agotamiento del pool de conexiones a PostgreSQL son:\n\n1. Verificar en el dashboard de PgBouncer cuántas conexiones están activas vs. el límite (100).\n2. Si hay una query \"colgada\" reteniendo conexiones, identificarla con `SELECT * FROM pg_stat_activity WHERE state = 'active' ORDER BY query_start;` y, si corresponde, cancelarla con `pg_cancel_backend(pid)`.\n3. Si el problema es puramente de volumen (no hay queries colgadas), escalar horizontalmente el número de réplicas de PgBouncer o subir temporalmente el límite de conexiones a 150.",
   "contexto_encontrado": true,
   "fuentes": [
     "arquitectura_sistema.md",
@@ -284,7 +291,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
       "seccion": "Runbook de incidentes — Plataforma de Pedidos > Incidente 1: Agotamiento del pool de conexiones a PostgreSQL",
       "similitud": 0.6701,
       "extracto": "## Incidente 1: Agotamiento del pool de conexiones a PostgreSQL **Síntoma**: el endpoint `POST /v1/pedidos` empieza a de...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -292,7 +299,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Métricas clave por componente > PostgreSQL / PgBouncer",
       "similitud": 0.5825,
       "extracto": "### PostgreSQL / PgBouncer - Conexiones activas vs. límite configurado (100). Alerta al superar el 80% de uso sostenido ...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -300,7 +307,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
       "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
       "similitud": 0.581,
       "extracto": "## Consideraciones de escalabilidad El cuello de botella histórico del sistema es el **pool de conexiones a PostgreSQL**...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -308,7 +315,7 @@ respuesta reproduce sus pasos con los datos puntuales (límite de 100, la query,
       "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Flujo de un pedido",
       "similitud": 0.5237,
       "extracto": "## Flujo de un pedido 1. El cliente autenticado hace `POST /v1/pedidos` con el carrito. 2. FastAPI valida el payload con...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     }
   ]
@@ -323,7 +330,7 @@ por qué?
 ```json
 {
   "pregunta": "¿Qué componente es el cuello de botella histórico del sistema bajo carga alta, y por qué?",
-  "respuesta": "El cuello de botella histórico del sistema bajo carga alta es el **pool de conexiones a PostgreSQL**. Específicamente, bajo más de 500 pedidos concurrentes, el límite de 100 conexiones de PgBouncer se satura, lo que causa que las requests nuevas queden esperando una conexión libre, generando timeouts intermitentes en el endpoint `/v1/pedidos`. Este es el incidente más frecuente registrado en el runbook de incidentes.",
+  "respuesta": "El cuello de botella histórico del sistema bajo carga alta es el **pool de conexiones a PostgreSQL**. Específicamente, bajo carga alta (más de 500 pedidos concurrentes), el límite de 100 conexiones de PgBouncer se satura y las requests nuevas quedan esperando una conexión libre, generando timeouts intermitentes en el endpoint `/v1/pedidos`. Este es el incidente más frecuente registrado en el runbook de incidentes.",
   "contexto_encontrado": true,
   "fuentes": [
     "arquitectura_sistema.md",
@@ -335,7 +342,7 @@ por qué?
       "seccion": "Arquitectura del sistema — Plataforma de Pedidos > Consideraciones de escalabilidad",
       "similitud": 0.5426,
       "extracto": "## Consideraciones de escalabilidad El cuello de botella histórico del sistema es el **pool de conexiones a PostgreSQL**...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -343,7 +350,7 @@ por qué?
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Stack de observabilidad",
       "similitud": 0.2145,
       "extracto": "# Monitoreo y alertas — Plataforma de Pedidos ## Stack de observabilidad El sistema usa Prometheus para recolectar métri...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -351,7 +358,7 @@ por qué?
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Dashboards de referencia",
       "similitud": 0.2003,
       "extracto": "## Dashboards de referencia - **Dashboard \"Salud de API\"**: latencia, tasa de error y throughput de FastAPI por endpoint...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -359,7 +366,7 @@ por qué?
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
       "similitud": 0.1651,
       "extracto": "## Canales de alerta Las alertas de severidad **alta** (ej. tasa de 5xx elevada, pool de PostgreSQL agotado) se envían s...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     }
   ]
@@ -386,7 +393,7 @@ queda vacía:
       "seccion": "Normativa de despliegue — Plataforma de Pedidos > Capacitación y checklist de guardia",
       "similitud": 0.3592,
       "extracto": "## Capacitación y checklist de guardia Todo integrante que entra a la guardia (on-call) por primera vez debe: 1. Leer el...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -394,7 +401,7 @@ queda vacía:
       "seccion": "Runbook de incidentes — Plataforma de Pedidos",
       "similitud": 0.2492,
       "extracto": "# Runbook de incidentes — Plataforma de Pedidos Este documento describe los incidentes conocidos, cómo detectarlos y cóm...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -402,7 +409,7 @@ queda vacía:
       "seccion": "Normativa de despliegue — Plataforma de Pedidos > Proceso de despliegue a producción",
       "similitud": 0.2265,
       "extracto": "## Proceso de despliegue a producción 1. **Ventana de despliegue**: los despliegues a producción sólo se realizan de lun...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     },
     {
@@ -410,7 +417,7 @@ queda vacía:
       "seccion": "Monitoreo y alertas — Plataforma de Pedidos > Canales de alerta",
       "similitud": 0.1926,
       "extracto": "## Canales de alerta Las alertas de severidad **alta** (ej. tasa de 5xx elevada, pool de PostgreSQL agotado) se envían s...",
-      "created_at": "2026-09-24T23:51:45+00:00",
+      "created_at": "2026-09-25T19:41:52+00:00",
       "env": "dev"
     }
   ]
@@ -424,15 +431,15 @@ fragmentos vienen del runbook; sin el filtro, 3 de los 4 venían de otros docume
 completo en [`evidencia/corrida_1_indexacion.txt`](evidencia/corrida_1_indexacion.txt).
 
 ```
-INFO src.retriever: Recuperados 4 fragmento(s) con filtro {'source': 'runbook_incidentes.md'}: ['runbook_incidentes.md (similitud=67.01%)', 'runbook_incidentes.md (similitud=31.10%)', 'runbook_incidentes.md (similitud=28.09%)', 'runbook_incidentes.md (similitud=27.95%)']
+INFO src.retriever: Recuperados 4 fragmento(s) con filtro {'source': 'runbook_incidentes.md'}: ['runbook_incidentes.md (similitud=67.01%)', 'runbook_incidentes.md (similitud=28.09%)', 'runbook_incidentes.md (similitud=27.95%)', 'runbook_incidentes.md (similitud=27.33%)']
 ```
 
 ### Log de la misma corrida
 
 ```
 INFO src.client: Modelo de embeddings: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 (dimensión 384)
-INFO src.ingestion: Indexando 24 fragmentos de 4 documento(s) en la colección 'manuales_tecnicos_dev' (...\vectorstore)...
-INFO src.ingestion: Indexación completa: 24 fragmentos persistidos.
+INFO src.ingestion: Indexando 21 fragmentos de 4 documento(s) en la colección 'manuales_tecnicos_dev' (...\vectorstore)...
+INFO src.ingestion: Indexación completa: 21 fragmentos persistidos.
 INFO src.retriever: Recuperados 4 fragmento(s): ['runbook_incidentes.md (similitud=67.01%)', 'monitoreo_alertas.md (similitud=58.25%)', 'arquitectura_sistema.md (similitud=58.10%)', 'arquitectura_sistema.md (similitud=52.37%)']
 ```
 
@@ -524,8 +531,8 @@ ocurra, porque solo hay una función que construye embeddings en todo el proyect
    `fuentes` reales sin depender de que el LLM las recuerde (ver más abajo).
 2. Los fragmenta con un **splitter jerárquico** (`_fragmentar_documento()`): primero
    `MarkdownHeaderTextSplitter` por encabezado (`#`/`##`/`###`), y recién para las secciones que
-   sigan superando `chunk_size=1000` caracteres, `RecursiveCharacterTextSplitter` como *fallback*
-   dentro de esa sección puntual (`chunk_overlap=150`).
+   sigan superando `CHUNK_SIZE=600` tokens, `RecursiveCharacterTextSplitter` como *fallback*
+   dentro de esa sección puntual (`CHUNK_OVERLAP=90`, medido también en tokens).
 3. Persiste los fragmentos + sus embeddings en una colección de ChromaDB (`./vectorstore`,
    colección `manuales_tecnicos_<RAG_ENV>` (`manuales_tecnicos_dev` por default)), creada con `collection_metadata={"hnsw:space": "cosine"}`.
 
@@ -534,11 +541,12 @@ ocurra, porque solo hay una función que construye embeddings en todo el proyect
 ciego al contenido — causa raíz de un hallazgo real, documentado en detalle en
 [Evidencia real de ejecución](#evidencia-real-de-ejecución). `MarkdownHeaderTextSplitter` evita
 eso de raíz: mantiene cada `##` (ej. "Incidente 1" completo, con síntoma + causa + resolución) en
-un solo fragmento siempre que entre en `chunk_size`; solo recurre al fallback de caracteres para
-las 3 secciones del corpus que efectivamente lo superan (`Componentes principales`,
-`Proceso de despliegue a producción`, `Incidente 1`) — y ahí corta *dentro* de esa sección
-puntual, nunca mezclando contenido de dos secciones o documentos distintos en el mismo fragmento
-(a diferencia del splitter plano).
+un solo fragmento siempre que entre en `CHUNK_SIZE`. Si una sección lo supera, el fallback corta
+*dentro* de esa sección puntual, nunca mezclando contenido de dos secciones o documentos distintos
+en el mismo fragmento (a diferencia del splitter plano). Con el límite actual de 600 tokens
+ninguna sección del corpus lo supera (la más larga tiene 321), así que hoy el fallback no se usa;
+con el límite anterior de 1000 caracteres se partían `Componentes principales`,
+`Proceso de despliegue a producción` e `Incidente 1`.
 
 **Métrica de distancia explícita, no la default implícita**: sin especificar `hnsw:space`, Chroma
 usa L2 al cuadrado por default, no coseno. Como los embeddings ya están normalizados
@@ -681,7 +689,7 @@ los datos puntuales y el caso fuera de contexto sigue dando "No lo sé":
 INFO __main__: Proveedor de generación: anthropic (fallback: ollama)
 ERROR src.chain: Falló el proveedor 'anthropic' (AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}); se intenta con el fallback 'ollama'.
 INFO httpx: HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-INFO src.chain: Respuesta generada en 99.48s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md'])
+INFO src.chain: Respuesta generada en 116.58s (contexto_encontrado=True, fuentes=['arquitectura_sistema.md', 'monitoreo_alertas.md'])
 ```
 
 El fallback Anthropic ↔ OpenAI está cubierto por los tests de `TestFallbackEntreProveedores`

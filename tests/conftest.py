@@ -19,3 +19,12 @@ def fast_retries(monkeypatch):
         return None
 
     monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+
+@pytest.fixture(autouse=True)
+def conteo_de_tokens_sin_red(monkeypatch):
+    """El chunking mide en tokens del modelo de embeddings, cuyo tokenizer se
+    descarga del Hub. En los tests se cuenta una palabra = un token, sin red."""
+    from src import ingestion
+
+    monkeypatch.setattr(ingestion, "_contar_tokens", lambda texto: len(texto.split()))

@@ -1,6 +1,7 @@
 $ pytest -v
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-8.4.2, pluggy-1.6.0 -- D:\ai-engineering-3\.venv\Scripts\python.exe
+cachedir: .pytest_cache
 rootdir: D:\ai-engineering-3
 configfile: pytest.ini
 testpaths: tests
@@ -71,4 +72,4 @@ tests/test_schemas.py::TestRespuestaRAG::test_fuentes_default_vacia PASSED [ 96%
 tests/test_schemas.py::TestRespuestaRAG::test_rechaza_pregunta_vacia PASSED [ 98%]
 tests/test_schemas.py::TestRespuestaRAG::test_rechaza_respuesta_vacia PASSED [100%]
 
-============================= 62 passed in 13.28s =============================
+============================= 62 passed in 18.77s =============================
