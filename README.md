@@ -157,6 +157,20 @@ los 4 fragmentos recuperados vienen todos de ese archivo (ver
    .venv\Scripts\activate           # Linux/Mac: source .venv/bin/activate
    ```
 
+   **Windows con PowerShell**: si la activación falla con "la ejecución de scripts está
+   deshabilitada en este sistema", habilitá scripts solo para esa terminal (no cambia la
+   configuración del sistema; se revierte al cerrarla) y volvé a activar:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+   .venv\Scripts\Activate.ps1
+   ```
+
+   Alternativas sin tocar la política: usar `cmd` (ahí `.venv\Scripts\activate` corre
+   `activate.bat`), o no activar el entorno y llamar directo a su Python en cada comando, ej.
+   `.venv\Scripts\python.exe -m pip install -r requirements.txt` y
+   `.venv\Scripts\python.exe -m src.main`.
+
 3. **Instalar dependencias**
 
    ```bash
